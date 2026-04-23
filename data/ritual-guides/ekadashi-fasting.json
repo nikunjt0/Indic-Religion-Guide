@@ -1,0 +1,57 @@
+{
+  "slug": "ekadashi-fasting",
+  "title": "Ekadashi Fasting",
+  "summary": "The eleventh day of each lunar fortnight, observed as a fasting day in Vaishnava and Smarta traditions. Dedicated to Vishnu. Rules vary by strictness; below is the common observance.",
+  "tradition": "hindu",
+  "appliesTo": {
+    "sects": ["vaishnava", "smarta"],
+    "regions": ["pan-india"],
+    "setting": ["home"],
+    "level": ["beginner", "intermediate"]
+  },
+  "steps": [
+    {
+      "order": 1,
+      "title": "Know the timing",
+      "instruction": "Ekadashi falls twice a month on the 11th lunar day (tithi). The fast begins at sunrise on Ekadashi and breaks after sunrise on Dvadashi (the 12th), within a specific 'parana' window. Check a Hindu calendar (panchanga) for exact local timings."
+    },
+    {
+      "order": 2,
+      "title": "Choose your level",
+      "instruction": "Strictest: nirjala (no food, no water). Common: phalahara (fruits, milk, nuts, tubers — no grains, beans, or pulses). Lighter: one simple satvik meal without grains. Health-limited individuals should not attempt nirjala without guidance."
+    },
+    {
+      "order": 3,
+      "title": "Avoid grains and pulses",
+      "instruction": "The defining rule across levels: no rice, wheat, barley, millet, or lentils on Ekadashi. Permitted: fruit, milk, yogurt, potato, sweet potato, sago (sabudana), water chestnut flour (singhara), buckwheat (kuttu), rock salt (sendha namak)."
+    },
+    {
+      "order": 4,
+      "title": "Spend the day in devotion",
+      "instruction": "Read the Vishnu Sahasranama, chant 'Om Namo Narayanaya' or 'Om Namo Bhagavate Vasudevaya', do extra japa, stay awake part of the night if possible (the Ekadashi jagarana)."
+    },
+    {
+      "order": 5,
+      "title": "Break the fast correctly (parana)",
+      "instruction": "Break the fast on Dvadashi morning within the prescribed parana window (shown in the panchanga). Traditional first food is a small amount of cooked grain — often rice with tulsi water."
+    }
+  ],
+  "variants": [
+    {
+      "label": "Nirjala Ekadashi (once a year)",
+      "when": "occasion=nirjala-ekadashi",
+      "instruction": "The Jyeshtha-shukla Ekadashi (Bhima Ekadashi) is observed without water, said to equal all other Ekadashis combined. Only attempt if healthy."
+    }
+  ],
+  "sources": [
+    {
+      "source_title": "Bhagavad Gita",
+      "chapter": "6",
+      "verse": "16-17",
+      "quote": "Yoga is not for one who eats too much, nor for one who fasts too much..."
+    }
+  ],
+  "tags": ["fasting", "ekadashi", "vaishnava-practice", "vrata"],
+  "deities": ["vishnu", "krishna"],
+  "updatedAt": 0
+}

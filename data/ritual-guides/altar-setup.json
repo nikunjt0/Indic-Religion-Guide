@@ -1,0 +1,56 @@
+{
+  "slug": "altar-setup",
+  "title": "Setting Up a Home Altar",
+  "summary": "A practical guide to placing, orienting, and maintaining a home altar (puja mandir). Conventions vary by region and sect; below is the widely shared beginner starting point.",
+  "tradition": "hindu",
+  "appliesTo": {
+    "sects": ["smarta", "vaishnava", "shaiva", "shakta"],
+    "regions": ["pan-india"],
+    "setting": ["home"],
+    "level": ["beginner"]
+  },
+  "steps": [
+    {
+      "order": 1,
+      "title": "Choose the location",
+      "instruction": "A clean, quiet room or corner. Ideally the northeast corner of the home (Ishanya) — the direction traditionally associated with the divine. Avoid placing the altar in a bedroom, bathroom, or under a staircase when possible."
+    },
+    {
+      "order": 2,
+      "title": "Orient the altar",
+      "instruction": "Position so that you face east or north while worshipping — meaning the altar itself is on the east or north wall. Never face south while worshipping."
+    },
+    {
+      "order": 3,
+      "title": "Arrange murtis and images",
+      "instruction": "Place the principal deity (ishta-devata) at the center and slightly elevated. Ganesha is commonly placed on the left (worshipper's left). Family or lineage deities may be added on either side. Keep photos of living gurus or deceased family members separate or on a lower shelf — they are not objects of deity worship."
+    },
+    {
+      "order": 4,
+      "title": "Provide the essentials",
+      "instruction": "Keep a small brass or silver water vessel (kalasha or panchapatra), a spoon (uddharani), a bell, a lamp (diya), incense holder, and a plate for offerings (thali).",
+      "materials": ["kalasha / panchapatra with spoon", "bell", "diya", "incense holder", "offering thali"]
+    },
+    {
+      "order": 5,
+      "title": "Maintain daily",
+      "instruction": "Wipe clean every morning. Change the water in the kalasha daily. Do not store old withered flowers or burnt wicks on the altar."
+    }
+  ],
+  "variants": [
+    {
+      "label": "Vaishnava household",
+      "when": "sect=vaishnava",
+      "instruction": "Keep a tulsi plant in or near the altar. Salagramas or shaligram stones are placed on the altar with particular daily care."
+    },
+    {
+      "label": "South Indian household",
+      "when": "region=south-india",
+      "instruction": "A dedicated puja room (pooja mandir) is traditional where space allows, with a wooden or stone shelf (mandap) housing the deities."
+    }
+  ],
+  "sources": [],
+  "tags": ["home-altar", "setup", "beginner", "mandir"],
+  "deities": ["ishta-devata"],
+  "updatedAt": 0
+}

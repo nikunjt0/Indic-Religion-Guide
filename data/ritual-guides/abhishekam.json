@@ -1,0 +1,60 @@
+{
+  "slug": "abhishekam",
+  "title": "Abhishekam (Ceremonial Bathing of the Murti)",
+  "summary": "Pouring sacred substances over the deity's image. Commonly performed to Shiva (on a lingam), Vishnu, and the Devi. Formal temple abhishekam differs substantially from the simple home version below.",
+  "tradition": "hindu",
+  "appliesTo": {
+    "sects": ["shaiva", "vaishnava", "shakta", "smarta"],
+    "regions": ["pan-india"],
+    "setting": ["home", "temple"],
+    "level": ["beginner", "intermediate"]
+  },
+  "steps": [
+    {
+      "order": 1,
+      "title": "Prepare substances",
+      "instruction": "Arrange the common abhisheka substances in small vessels: water, milk, curd, honey, ghee, sugar water, tender coconut water, sandal paste, vibhuti or turmeric, and a final rinse of clean water. This combination of five (pancha-amrita) or more is the widely used household set.",
+      "materials": ["water", "milk", "curd (yogurt)", "honey", "ghee", "sugar or coconut water", "clean water for final rinse"]
+    },
+    {
+      "order": 2,
+      "title": "Sankalpa and invocation",
+      "instruction": "Sit before the murti or lingam, light the lamp, perform achamana and sankalpa as in daily puja, and invite the deity."
+    },
+    {
+      "order": 3,
+      "title": "Perform the abhisheka",
+      "instruction": "Pour each substance in turn over the murti while chanting the mantra of the deity. After each substance, gently wipe or rinse with water. The common Shaiva practice uses the Rudram or Panchakshari mantra; Vaishnavas commonly use the Purusha Sukta or Vishnu Sahasranama.",
+      "mantras": [
+        { "text": "ॐ नमः शिवाय", "transliteration": "oṃ namaḥ śivāya" }
+      ]
+    },
+    {
+      "order": 4,
+      "title": "Dry, dress, and decorate",
+      "instruction": "After the final water rinse, gently dry the murti, apply sandal paste and vibhuti or kumkum as appropriate, dress it, and offer flowers."
+    },
+    {
+      "order": 5,
+      "title": "Offerings and closing",
+      "instruction": "Offer incense, lamp (dhupa-dipa), naivedya, perform aarti, and distribute the abhisheka tirtha as prasad."
+    }
+  ],
+  "variants": [
+    {
+      "label": "Temple-style Rudrabhisheka",
+      "when": "sect=shaiva, setting=temple",
+      "instruction": "Priest-led recitation of the Shri Rudram with 11 specific substances. Requires a trained priest; not recommended for beginner home practice."
+    }
+  ],
+  "sources": [
+    {
+      "source_title": "Yajur Veda",
+      "chapter": "Rudram",
+      "quote": "Namaste Rudra manyava utota ishhave namah..."
+    }
+  ],
+  "tags": ["abhishekam", "lingam", "pancha-amrita", "home-ritual", "temple-ritual"],
+  "deities": ["shiva", "vishnu", "devi"],
+  "updatedAt": 0
+}

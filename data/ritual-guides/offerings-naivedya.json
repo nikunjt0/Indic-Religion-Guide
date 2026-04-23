@@ -1,0 +1,66 @@
+{
+  "slug": "offerings-naivedya",
+  "title": "Naivedya (Food Offerings)",
+  "summary": "How to prepare and offer food to the deity and receive it back as prasad. Applies in both home and temple worship; specifics vary by sect.",
+  "tradition": "hindu",
+  "appliesTo": {
+    "sects": ["smarta", "vaishnava", "shaiva", "shakta"],
+    "regions": ["pan-india"],
+    "setting": ["home", "temple"],
+    "level": ["beginner", "intermediate"]
+  },
+  "steps": [
+    {
+      "order": 1,
+      "title": "Prepare food with cleanliness",
+      "instruction": "Naivedya is prepared in a clean kitchen by someone bathed and in clean clothes. Do not taste the food while cooking — the first portion goes to the deity untouched."
+    },
+    {
+      "order": 2,
+      "title": "Keep it satvik",
+      "instruction": "Common offerings: cooked rice, sweets (kheer, laddu), fruits, milk, tulsi leaves (Vaishnava), bel leaves (Shaiva), bananas, coconut, jaggery. Avoid onion, garlic, meat, eggs, and alcohol in naivedya."
+    },
+    {
+      "order": 3,
+      "title": "Place the food on the altar",
+      "instruction": "Set the offering plate directly in front of the deity. Sprinkle a few drops of water around the plate (parishechana) to demarcate it as an offering."
+    },
+    {
+      "order": 4,
+      "title": "Offer with mantra",
+      "instruction": "Hold the offering with folded hands and offer it mentally to the deity. A common verse across traditions is the 'brahmārpaṇaṁ' verse from the Gita.",
+      "mantras": [
+        { "text": "ॐ ब्रह्मार्पणं ब्रह्म हविर्ब्रह्माग्नौ ब्रह्मणा हुतम्।", "transliteration": "oṃ brahmārpaṇaṁ brahma havir brahmāgnau brahmaṇā hutam", "meaning": "Brahman is the offering, Brahman the offered, offered by Brahman into the fire of Brahman" }
+      ]
+    },
+    {
+      "order": 5,
+      "title": "Wait and receive as prasad",
+      "instruction": "Wait a short interval (commonly a few minutes — the time it takes for the deity to accept). Then partake of the food as prasad. Share with family. Do not throw prasad away; treat leftovers with respect."
+    }
+  ],
+  "variants": [
+    {
+      "label": "Vaishnava households",
+      "when": "sect=vaishnava",
+      "instruction": "Tulsi leaves are placed on top of the offering and considered essential. Food not offered first is not eaten."
+    }
+  ],
+  "sources": [
+    {
+      "source_title": "Bhagavad Gita",
+      "chapter": "9",
+      "verse": "26",
+      "quote": "A leaf, a flower, a fruit, water — whoever offers to me with devotion, that offering of the pure-hearted I accept."
+    },
+    {
+      "source_title": "Bhagavad Gita",
+      "chapter": "4",
+      "verse": "24",
+      "quote": "Brahman is the offering, Brahman the oblation, poured by Brahman into the fire of Brahman..."
+    }
+  ],
+  "tags": ["naivedya", "prasad", "offerings", "satvik", "daily-practice"],
+  "deities": ["ishta-devata", "vishnu", "shiva"],
+  "updatedAt": 0
+}

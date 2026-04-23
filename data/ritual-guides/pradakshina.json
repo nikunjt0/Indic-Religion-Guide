@@ -1,0 +1,38 @@
+{
+  "slug": "pradakshina",
+  "title": "Pradakshina (Circumambulation)",
+  "summary": "Walking around the deity, temple, or sacred object in a clockwise direction. A universal Hindu practice, performed with specific counts per deity.",
+  "tradition": "hindu",
+  "appliesTo": {
+    "sects": ["smarta", "vaishnava", "shaiva", "shakta"],
+    "regions": ["pan-india"],
+    "setting": ["home", "temple"],
+    "level": ["beginner"]
+  },
+  "steps": [
+    {
+      "order": 1,
+      "title": "Always walk clockwise",
+      "instruction": "Keep the deity on your right as you walk. Move slowly and mindfully — pradakshina is meditation in motion, not exercise."
+    },
+    {
+      "order": 2,
+      "title": "Count by the deity",
+      "instruction": "Commonly prescribed counts: Ganesha — 1, Surya — 2, Shiva — 3 (and the Shiva pradakshina goes only as far as the somasutra / drainage channel before turning back; one does not cross it), Vishnu — 4, Devi / Ambika — 4, Ashwattha (peepal) tree — 7 or 108. Where exact counts are unknown, 3 is the common default."
+    },
+    {
+      "order": 3,
+      "title": "Hold the right posture",
+      "instruction": "Fold hands at the chest. Keep eyes down or softly on the deity. Walk barefoot inside the temple."
+    },
+    {
+      "order": 4,
+      "title": "Close with namaskara",
+      "instruction": "Stop before the deity after the last round and offer a full or half prostration (sashtanga or panchanga namaskara)."
+    }
+  ],
+  "sources": [],
+  "tags": ["pradakshina", "circumambulation", "temple-etiquette", "beginner"],
+  "deities": ["shiva", "vishnu", "ganesha", "devi", "surya"],
+  "updatedAt": 0
+}

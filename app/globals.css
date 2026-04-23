@@ -1,26 +1,77 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fff8ec;
+  --surface: #ffffff;
+  --surface-warm: #fdf1dd;
+  --foreground: #2a1810;
+  --muted: #7a5d46;
+  --saffron: #c4541c;
+  --saffron-dark: #8a3412;
+  --saffron-soft: #fde8cc;
+  --gold: #b98417;
+  --border: #ead3ad;
+  --border-strong: #d4b283;
+  --maroon: #7c2d12;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-warm: var(--surface-warm);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-saffron: var(--saffron);
+  --color-saffron-dark: var(--saffron-dark);
+  --color-saffron-soft: var(--saffron-soft);
+  --color-gold: var(--gold);
+  --color-border-warm: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-maroon: var(--maroon);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-cormorant);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+body {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  background-image:
+    radial-gradient(circle at 10% -10%, rgba(196, 84, 28, 0.08), transparent 55%),
+    radial-gradient(circle at 100% 0%, rgba(185, 132, 23, 0.07), transparent 50%);
+  background-attachment: fixed;
+}
+
+.font-display {
+  font-family: var(--font-cormorant), ui-serif, Georgia, serif;
+  letter-spacing: 0.01em;
+}
+
+.devanagari {
+  font-family: "Noto Serif Devanagari", ui-serif, serif;
+}
+
+/* Thin ornamental divider used under headers. */
+.om-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--saffron);
+}
+.om-divider::before,
+.om-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--border-strong),
+    transparent
+  );
 }

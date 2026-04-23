@@ -32,6 +32,13 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# secrets
+*-adminsdk-*.json
+
+# primary text corpus — ingest locally, Firestore is the source of truth
+/manuscripts
 
 # vercel
 .vercel

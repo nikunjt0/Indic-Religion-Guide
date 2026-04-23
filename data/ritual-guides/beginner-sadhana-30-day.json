@@ -1,0 +1,55 @@
+{
+  "slug": "beginner-sadhana-30-day",
+  "title": "30-Day Beginner Sadhana",
+  "summary": "A minimal daily practice sustainable for a full month. Designed for a beginner building a habit — roughly 15 minutes a day.",
+  "tradition": "hindu",
+  "appliesTo": {
+    "sects": ["smarta", "vaishnava", "shaiva", "shakta"],
+    "regions": ["pan-india"],
+    "setting": ["home"],
+    "level": ["beginner"]
+  },
+  "steps": [
+    {
+      "order": 1,
+      "title": "Morning (10 minutes)",
+      "instruction": "Rise before sunrise where possible. Wash. Light the diya. Sit before the altar. Do achamana. Chant one mala (108) of your chosen mantra."
+    },
+    {
+      "order": 2,
+      "title": "Before meals",
+      "instruction": "Silently offer the food to the deity with the 'brahmārpaṇaṁ' verse or simply 'oṃ namo nārāyaṇāya' three times before eating."
+    },
+    {
+      "order": 3,
+      "title": "Evening (5 minutes)",
+      "instruction": "Light the diya at dusk. Perform a brief aarti. If time permits, read a few verses from the Bhagavad Gita, the Vishnu Sahasranama, or a short stotra in translation."
+    },
+    {
+      "order": 4,
+      "title": "Weekly",
+      "instruction": "On the day of your ishta-devata (Monday — Shiva, Tuesday — Hanuman / Devi, Wednesday — Ganesha, Thursday — Vishnu / Guru, Friday — Devi / Lakshmi, Saturday — Shani / Hanuman, Sunday — Surya), extend the morning japa to three malas and the evening reading to a longer passage."
+    },
+    {
+      "order": 5,
+      "title": "Monthly",
+      "instruction": "Observe one Ekadashi fast (see the ekadashi-fasting guide). Visit a temple on a new moon or full moon day if convenient."
+    },
+    {
+      "order": 6,
+      "title": "Notice and adjust, don't force",
+      "instruction": "After 30 days, assess: what is sustainable? Keep that. A small steady practice beats an ambitious one that is abandoned."
+    }
+  ],
+  "sources": [
+    {
+      "source_title": "Bhagavad Gita",
+      "chapter": "6",
+      "verse": "16",
+      "quote": "Yoga is not for one who eats too much or too little, nor for one who sleeps too much or too little..."
+    }
+  ],
+  "tags": ["sadhana", "beginner", "daily-practice", "habit"],
+  "deities": ["ishta-devata"],
+  "updatedAt": 0
+}

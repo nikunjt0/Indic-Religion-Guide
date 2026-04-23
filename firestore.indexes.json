@@ -1,0 +1,34 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "chunks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "embedding",
+          "vectorConfig": {
+            "dimension": 1536,
+            "flat": {}
+          }
+        }
+      ]
+    },
+    {
+      "collectionGroup": "ritualGuides",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tradition", "order": "ASCENDING" },
+        { "fieldPath": "tags", "arrayConfig": "CONTAINS" }
+      ]
+    },
+    {
+      "collectionGroup": "ritualGuides",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tradition", "order": "ASCENDING" },
+        { "fieldPath": "deities", "arrayConfig": "CONTAINS" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -1,0 +1,44 @@
+{
+  "slug": "aarti",
+  "title": "Aarti (Waving of the Lamp)",
+  "summary": "Waving a lit lamp in a clockwise circle before the deity at the end of puja. Brief, universal, and performed in nearly every Hindu tradition.",
+  "tradition": "hindu",
+  "appliesTo": {
+    "sects": ["smarta", "vaishnava", "shaiva", "shakta"],
+    "regions": ["pan-india"],
+    "setting": ["home", "temple"],
+    "level": ["beginner"]
+  },
+  "steps": [
+    {
+      "order": 1,
+      "title": "Prepare the lamp",
+      "instruction": "Use a camphor or ghee lamp with multiple wicks (usually 1, 3, 5, or 9). Light just before the aarti — it should not have been burning for a long time beforehand.",
+      "materials": ["aarti lamp (arti thali)", "camphor or ghee with cotton wicks"]
+    },
+    {
+      "order": 2,
+      "title": "Sing or recite the aarti",
+      "instruction": "Stand before the deity. Sing the aarti song appropriate to the deity (e.g., 'Om Jai Jagadish Hare' for a general Vaishnava context; 'Karpoora Gauram' for Shiva; 'Jai Ambe Gauri' for Devi). A ring of a small bell accompanies the singing."
+    },
+    {
+      "order": 3,
+      "title": "Wave the lamp",
+      "instruction": "Move the lamp clockwise in a vertical circle before the deity — first at the feet, then the chest, then the face, then the whole form. Five rotations is common."
+    },
+    {
+      "order": 4,
+      "title": "Share the flame",
+      "instruction": "Offer the flame to gathered devotees. Each person cups their hands over the flame briefly and touches the warmth to their forehead and eyes as a gesture of receiving grace."
+    },
+    {
+      "order": 5,
+      "title": "Extinguish and close",
+      "instruction": "Extinguish the lamp (do not blow it out — use a smothering motion or let the camphor burn out). Sprinkle tirtha water and distribute prasad."
+    }
+  ],
+  "sources": [],
+  "tags": ["aarti", "lamp", "closing-ritual", "daily-practice"],
+  "deities": ["ishta-devata", "vishnu", "shiva", "devi", "ganesha"],
+  "updatedAt": 0
+}

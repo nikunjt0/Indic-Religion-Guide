@@ -1,0 +1,76 @@
+{
+  "slug": "daily-puja",
+  "title": "Daily Home Puja (Nitya Puja)",
+  "summary": "A simple daily worship routine performed at the home altar. Steps below are the widely shared beginner version; sect and region shape mantras, order, and materials.",
+  "tradition": "hindu",
+  "appliesTo": {
+    "sects": ["smarta", "vaishnava", "shaiva", "shakta"],
+    "regions": ["pan-india"],
+    "setting": ["home"],
+    "level": ["beginner", "intermediate"]
+  },
+  "steps": [
+    {
+      "order": 1,
+      "title": "Prepare yourself and the space",
+      "instruction": "Bathe or wash hands, face, and feet. Wear clean clothes. Light the altar lamp (diya) and an incense stick.",
+      "materials": ["clean cloth", "oil or ghee diya", "incense"]
+    },
+    {
+      "order": 2,
+      "title": "Achamana — ritual sipping of water",
+      "instruction": "Sip a small spoon of water three times from the right palm while silently naming the deity, to purify speech and intention."
+    },
+    {
+      "order": 3,
+      "title": "Sankalpa — state intention",
+      "instruction": "Sit facing east or north. Hold a small amount of water, rice, and a flower in the right hand and silently state your name, place, date, and the purpose of the puja before letting the offering fall."
+    },
+    {
+      "order": 4,
+      "title": "Invocation (Avahana)",
+      "instruction": "Invite the chosen deity into the murti or image with folded hands and a short mantra (commonly an om namah <deity> form).",
+      "mantras": [
+        { "text": "ॐ नमः शिवाय", "transliteration": "oṃ namaḥ śivāya", "meaning": "Salutations to Shiva (Shaiva example; replace with your ishta-devata)" }
+      ]
+    },
+    {
+      "order": 5,
+      "title": "Offerings (Upachara)",
+      "instruction": "Offer water for washing feet (padya), hands (arghya), sipping (achamaniya), then bathe (snana) the murti with a few drops of water. Offer clothes or a flower (vastra), sandal paste (gandha), unbroken rice (akshata), flowers (pushpa), incense (dhupa), lamp (dipa), and food (naivedya)."
+    },
+    {
+      "order": 6,
+      "title": "Mantra or name recitation",
+      "instruction": "Chant your chosen mantra or a short stotram 11, 27, or 108 times on a mala."
+    },
+    {
+      "order": 7,
+      "title": "Aarti and closing",
+      "instruction": "Wave the lit lamp clockwise three or five times. Do pradakshina (circumambulation) if the altar permits. Sprinkle the tirtha water on the head and take the prasad."
+    }
+  ],
+  "variants": [
+    {
+      "label": "Shaiva, South Indian home version",
+      "when": "sect=shaiva, region=south-india",
+      "instruction": "Add vibhuti (sacred ash) on the forehead after Step 4. Chant Panchakshari (Om Namah Shivaya) as the core mantra."
+    },
+    {
+      "label": "Vaishnava home version",
+      "when": "sect=vaishnava",
+      "instruction": "Add tulsi leaves to water and naivedya offerings. Chant the Ashtakshari (Om Namo Narayanaya) or Dvadashakshari mantra."
+    }
+  ],
+  "sources": [
+    {
+      "source_title": "Bhagavad Gita",
+      "chapter": "9",
+      "verse": "26",
+      "quote": "A leaf, a flower, a fruit, water — whoever offers to me with devotion, that offering of the pure-hearted I accept."
+    }
+  ],
+  "tags": ["puja", "daily-practice", "home-altar", "beginner", "upachara"],
+  "deities": ["ishta-devata", "shiva", "vishnu", "ganesha", "devi"],
+  "updatedAt": 0
+}

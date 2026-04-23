@@ -1,0 +1,56 @@
+{
+  "slug": "mantra-japa-basics",
+  "title": "Mantra Japa (Repetition)",
+  "summary": "The practice of repeating a mantra, typically on a 108-bead mala. A core daily practice in every Hindu sampradaya.",
+  "tradition": "hindu",
+  "appliesTo": {
+    "sects": ["smarta", "vaishnava", "shaiva", "shakta"],
+    "regions": ["pan-india"],
+    "setting": ["home", "temple"],
+    "level": ["beginner", "intermediate", "advanced"]
+  },
+  "steps": [
+    {
+      "order": 1,
+      "title": "Choose your mantra",
+      "instruction": "Beginners commonly use: Om Namah Shivaya (Shaiva), Om Namo Narayanaya or Hare Krishna mahamantra (Vaishnava), Om Aim Hrim Klim Chamundaye Viccha (Shakta), Om Gam Ganapataye Namaha (Ganesha), Gayatri (any Smarta practice). If you have a diksha mantra from a guru, use it; otherwise the generic ishta-devata mantra is appropriate."
+    },
+    {
+      "order": 2,
+      "title": "Get a mala",
+      "instruction": "108 beads plus a meru (summit) bead. Tulasi mala for Vaishnavas; rudraksha for Shaivas; sphatika (crystal) or red sandalwood is universal.",
+      "materials": ["108-bead mala"]
+    },
+    {
+      "order": 3,
+      "title": "Posture and time",
+      "instruction": "Sit with a straight spine, facing east or north. Brahma-muhurta (roughly 4:00–5:30 AM) is traditional but any consistent quiet time is fine."
+    },
+    {
+      "order": 4,
+      "title": "Hold the mala correctly",
+      "instruction": "Hold the mala in the right hand, draped over the middle finger. Use the thumb to pull each bead past. Do not cross the meru bead — when you reach it after 108, reverse direction for the next round."
+    },
+    {
+      "order": 5,
+      "title": "Start with a fixed count",
+      "instruction": "A typical daily sadhana is one mala (108 repetitions), scaling up over time. Some traditions prescribe 3, 11, or 16 rounds. Consistency daily is more important than long occasional sessions."
+    },
+    {
+      "order": 6,
+      "title": "Close with dedication",
+      "instruction": "End with 'sarvam krishnarpanam astu' (Vaishnava) or a similar line dedicating the fruit of the practice to the deity."
+    }
+  ],
+  "sources": [
+    {
+      "source_title": "Bhagavad Gita",
+      "chapter": "10",
+      "verse": "25",
+      "quote": "Among sacrifices, I am the japa-yajna..."
+    }
+  ],
+  "tags": ["japa", "mantra", "mala", "daily-practice", "beginner"],
+  "deities": ["ishta-devata", "shiva", "vishnu", "krishna", "devi", "ganesha"],
+  "updatedAt": 0
+}

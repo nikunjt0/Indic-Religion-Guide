@@ -1,0 +1,55 @@
+{
+  "slug": "temple-etiquette",
+  "title": "Temple Etiquette",
+  "summary": "How to conduct yourself when visiting a Hindu temple. Customs vary by tradition and region; below is the widely shared beginner version.",
+  "tradition": "hindu",
+  "appliesTo": {
+    "sects": ["smarta", "vaishnava", "shaiva", "shakta"],
+    "regions": ["pan-india"],
+    "setting": ["temple"],
+    "level": ["beginner"]
+  },
+  "steps": [
+    {
+      "order": 1,
+      "title": "Prepare before entering",
+      "instruction": "Bathe before visiting. Wear modest, clean clothing — traditional dress (saree, dhoti, kurta) is appreciated. Remove leather items (belts, wallets, shoes) before entering the sanctum area. Leave shoes at the designated stand."
+    },
+    {
+      "order": 2,
+      "title": "Purify at the entrance",
+      "instruction": "Ring the temple bell once on entering. Many temples have a small basin — wash hands and feet. Sprinkle a few drops of water on the head from the tirtha vessel if offered."
+    },
+    {
+      "order": 3,
+      "title": "Approach the sanctum",
+      "instruction": "Walk clockwise around the outer pradakshina path first if the temple has one. Do not point feet toward the deity. Women traditionally observe menstrual abstinence from entering the inner sanctum (customs vary — follow local practice)."
+    },
+    {
+      "order": 4,
+      "title": "Offerings and darshan",
+      "instruction": "Present flowers, fruit, or a coconut to the priest at the sanctum. Stand before the deity with folded hands, eyes open, and take darshan. Do not push or crowd."
+    },
+    {
+      "order": 5,
+      "title": "Receive prasad respectfully",
+      "instruction": "Receive tirtha (holy water) in the right palm and sip it. Receive the camphor flame by cupping hands over the lamp and touching the warmth to the eyes. Accept prasad with the right hand, or both hands cupped."
+    },
+    {
+      "order": 6,
+      "title": "Don't turn your back on the deity",
+      "instruction": "When leaving the sanctum, back away a few steps before turning."
+    }
+  ],
+  "variants": [
+    {
+      "label": "South Indian temples",
+      "when": "region=south-india",
+      "instruction": "Many temples have stricter dress codes — men may be asked to remove their upper garment before entering the sanctum. Some temples restrict non-Hindus from the inner sanctum; respect posted signs."
+    }
+  ],
+  "sources": [],
+  "tags": ["temple", "etiquette", "darshan", "beginner"],
+  "deities": ["ishta-devata"],
+  "updatedAt": 0
+}
