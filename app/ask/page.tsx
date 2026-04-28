@@ -1,33 +1,37 @@
-import Link from "next/link";
-import BackLink from "@/components/BackLink";
+import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import { adminDb } from "@/lib/firebase/admin";
+import { getSessionUser } from "@/lib/auth/session";
+import type { UserProfile } from "@/lib/types/firestore";
 import AskClient from "./ask-client";
 
 export const metadata = {
   title: "Ask — Indic Religion Guide",
 };
 
+// The session/profile lookup is dynamic; Cache Components requires it to live
+// inside an explicit Suspense boundary or the build fails the blocking-route
+// check. Boundary is tight so the rest of the page can prerender.
+async function AskGate() {
+  const user = await getSessionUser();
+  if (user) {
+    const snap = await adminDb.collection("users").doc(user.uid).get();
+    const profile = snap.exists ? (snap.data() as UserProfile) : null;
+    const hasTradition =
+      (profile?.traditions && profile.traditions.length > 0) ||
+      Boolean(profile?.traditionPreference);
+    // Force the user to pick a tradition before they can ask. The choice drives
+    // retrieval filtering and prompt framing — an unset profile would silently
+    // fall back to "all sources", which isn't what the user signed up for.
+    if (!hasTradition) redirect("/profile");
+  }
+  return <AskClient />;
+}
+
 export default function AskPage() {
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-5 py-6">
-      <BackLink href="/" label="Back to home" />
-      <header className="flex items-start justify-between gap-4 rounded-2xl border border-border-warm bg-surface/80 p-5">
-        <div>
-          <h1 className="font-display text-3xl font-semibold text-maroon">
-            Ask
-          </h1>
-          <p className="mt-1 text-sm leading-relaxed text-foreground/75">
-            Ask a practice question. We&apos;ll cite primary texts where we can
-            and fall back to curated ritual guides for procedure.
-          </p>
-        </div>
-        <Link
-          href="/chats"
-          className="shrink-0 rounded-full border border-border-strong bg-surface px-3.5 py-1.5 text-xs font-semibold text-saffron-dark transition hover:bg-saffron-soft"
-        >
-          History
-        </Link>
-      </header>
-      <AskClient />
-    </main>
+    <Suspense fallback={null}>
+      <AskGate />
+    </Suspense>
   );
 }

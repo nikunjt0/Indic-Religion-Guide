@@ -3,14 +3,36 @@ import { adminDb } from "@/lib/firebase/admin";
 import { CHAT_MODEL, openai } from "@/lib/openai";
 import { decideClarification } from "@/lib/rag/clarify";
 import { logQuery } from "@/lib/rag/log";
-import { PROMPT_VERSION, SYSTEM_PROMPT, buildUserPrompt } from "@/lib/rag/prompt";
-import { embedQuery, findNearestChunks, matchGuides } from "@/lib/rag/retrieve";
+import {
+  PROMPT_VERSION,
+  SYSTEM_PROMPT,
+  buildUserPrompt,
+  compressPriorAssistantTurn,
+  groupChunksBySource,
+} from "@/lib/rag/prompt";
+import {
+  embedQuery,
+  findNearestChunks,
+  matchGuides,
+  resolveRetrievalTraditions,
+} from "@/lib/rag/retrieve";
 import type { UserProfile } from "@/lib/types/firestore";
+
+// Cap how many prior turns we replay to keep token cost bounded. Last 8
+// messages = up to 4 user/assistant exchanges, which covers typical follow-up
+// chains without ballooning the prompt.
+const MAX_HISTORY_MESSAGES = 8;
+
+const HistoryMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().max(20_000),
+});
 
 const BodySchema = z.object({
   userId: z.string().min(1),
   question: z.string().min(1).max(4000),
   clarifications: z.record(z.string(), z.string()).optional(),
+  history: z.array(HistoryMessageSchema).optional(),
 });
 
 function sse(data: unknown): Uint8Array {
@@ -25,6 +47,8 @@ export async function POST(req: Request) {
     return Response.json({ error: "invalid body", issues: parsed.error.issues }, { status: 400 });
   }
   const { userId, question, clarifications } = parsed.data;
+  const history = (parsed.data.history ?? []).slice(-MAX_HISTORY_MESSAGES);
+  const lastUserTurn = [...history].reverse().find((m) => m.role === "user");
 
   // Load profile (may not exist for fresh anonymous users).
   const profileSnap = await adminDb.collection("users").doc(userId).get();
@@ -58,23 +82,47 @@ export async function POST(req: Request) {
     });
   }
 
-  // Retrieve.
+  // Retrieve. For follow-ups, prepend the most recent prior user question to
+  // the embedding input so the vector search captures the topic the user is
+  // following up on (e.g., a terse "what about during Navaratri?" still pulls
+  // puja-relevant chunks because the prior turn anchored the topic).
+  const retrievalQuery = lastUserTurn
+    ? `${lastUserTurn.content}\n\n${question}`
+    : question;
   const [queryVec, guides] = await Promise.all([
-    embedQuery(question),
+    embedQuery(retrievalQuery),
     matchGuides(question, profile),
   ]);
-  const chunks = await findNearestChunks(queryVec, 8);
+  // Honor the user's tradition selection unless the question crosses traditions
+  // (explicit comparison, or naming a tradition the user didn't select).
+  const allowedTraditions = resolveRetrievalTraditions(profile, retrievalQuery);
+  const chunks = await findNearestChunks(queryVec, 8, allowedTraditions);
+  const grouped = groupChunksBySource(chunks);
 
-  // Send the retrieval envelope up front so the client can render the citations pane immediately.
-  const citationsPayload = {
+  // Ship the grouped retrieval up front so the client can render source cards
+  // immediately (with quotes collapsed) before the model starts generating.
+  const chunkById = new Map(chunks.map((c) => [c.id, c]));
+  const contextPayload = {
     type: "context",
-    chunks: chunks.map((c) => ({
-      id: c.id,
-      source_title: c.source_title,
-      chapter: c.chapter,
-      verse: c.verse,
-      page: c.page,
-      text: c.text.slice(0, 500),
+    sources: grouped.map((s) => ({
+      index: s.index,
+      source_title: s.source_title,
+      quotes: s.quotes.map((q, i) => {
+        // Find matching chunk to recover its id (quotes preserved rank order
+        // per source, so we can zip by order against the per-source slice).
+        const sameTitleChunks = chunks.filter(
+          (c) => c.source_title === s.source_title,
+        );
+        const c = sameTitleChunks[i];
+        return {
+          id: c?.id ?? `${s.source_title}:${i}`,
+          source_title: s.source_title,
+          chapter: q.chapter,
+          verse: q.verse,
+          page: q.page,
+          text: (chunkById.get(c?.id ?? "")?.text ?? q.text).slice(0, 800),
+        };
+      }),
     })),
     guides: guides.map((g) => ({ slug: g.slug, title: g.title })),
   };
@@ -83,7 +131,7 @@ export async function POST(req: Request) {
     question,
     profile,
     clarifications,
-    chunks,
+    sources: grouped,
     guides,
   });
 
@@ -91,13 +139,23 @@ export async function POST(req: Request) {
 
   const stream = new ReadableStream({
     async start(controller) {
-      controller.enqueue(sse(citationsPayload));
+      controller.enqueue(sse(contextPayload));
+
+      const priorMessages = history.map((m) =>
+        m.role === "assistant"
+          ? {
+              role: "assistant" as const,
+              content: compressPriorAssistantTurn(m.content),
+            }
+          : { role: "user" as const, content: m.content },
+      );
 
       try {
         const completion = await openai.chat.completions.create({
           model: CHAT_MODEL,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
+            ...priorMessages,
             { role: "user", content: userPrompt },
           ],
           stream: true,

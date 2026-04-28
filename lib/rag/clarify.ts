@@ -23,6 +23,19 @@ export function decideClarification(
   // Only ask if the question is about a ritual.
   if (!RITUAL_REGEX.test(question)) return { needed: false };
 
+  // The sect clarification (Smarta/Vaishnava/Shaiva/Shakta) is Hindu-specific.
+  // Skip it for users who only follow Jain — they won't have a Hindu sect to
+  // pick, and we don't want to interrogate them about a category that doesn't
+  // apply.
+  const traditions =
+    profile?.traditions && profile.traditions.length > 0
+      ? profile.traditions
+      : profile?.traditionPreference
+        ? [profile.traditionPreference]
+        : [];
+  const followsHindu = traditions.length === 0 || traditions.includes("hindu");
+  if (!followsHindu) return { needed: false };
+
   const known = {
     sect:
       profile?.sect ||
@@ -30,6 +43,7 @@ export function decideClarification(
       SECT_REGEX.test(question) ||
       null,
     region:
+      (profile?.regions && profile.regions.length > 0) ||
       profile?.region ||
       priorClarifications?.region ||
       REGION_REGEX.test(question) ||

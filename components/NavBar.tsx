@@ -7,10 +7,14 @@ import { useEffect, useState } from "react";
 
 const LINKS = [
   { href: "/ask", label: "Ask" },
-  { href: "/guides", label: "Guides" },
-  { href: "/chats", label: "History" },
   { href: "/profile", label: "Profile" },
 ];
+
+// The chat pages render their own full-height shell with a sidebar — hide the
+// global top nav there so it doesn't double up on navigation chrome.
+function isChatPath(pathname: string) {
+  return pathname === "/ask" || pathname.startsWith("/chats/");
+}
 
 export default function NavBar() {
   const pathname = usePathname();
@@ -18,8 +22,10 @@ export default function NavBar() {
 
   useEffect(() => setOpen(false), [pathname]);
 
+  if (isChatPath(pathname)) return null;
+
   return (
-    <header className="sticky top-0 z-30 border-b border-border-warm/80 bg-background/90 backdrop-blur">
+    <header className="sticky top-0 z-[1100] border-b border-border-warm/80 bg-background/90 backdrop-blur">
       <nav className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-5 py-3">
         <Link
           href="/"

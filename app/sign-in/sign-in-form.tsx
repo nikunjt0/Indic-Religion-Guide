@@ -44,7 +44,10 @@ export default function SignInForm() {
       const auth = getClientAuth();
       const cred = await signInAnonymously(auth);
       await persistSession(await cred.user.getIdToken());
-      router.push("/ask");
+      // Send guests through the profile page first so they pick a tradition
+      // (Hindu / Jain / both) before asking — that selection drives retrieval
+      // and prompt framing.
+      router.push("/profile");
     } catch (e) {
       setError((e as Error).message);
     } finally {

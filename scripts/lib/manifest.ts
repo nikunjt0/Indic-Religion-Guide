@@ -69,7 +69,7 @@ export const manifest: Record<string, SourceManifestEntry> = {
     language: "bilingual",
     tags: ["upanishad", "shruti", "vedanta"],
   },
-  "PrashnaUpanishad.pdf": {
+  "Prashna_Upanishad.pdf": {
     title: "Prashna Upanishad",
     tradition: "hindu",
     text_type: "upanishad",
@@ -85,7 +85,7 @@ export const manifest: Record<string, SourceManifestEntry> = {
     language: "bilingual",
     tags: ["upanishad", "shruti", "vedanta"],
   },
-  "MandukyaUpanishad.pdf": {
+  "Mandukya_Upanishad.pdf": {
     title: "Mandukya Upanishad",
     tradition: "hindu",
     text_type: "upanishad",
@@ -93,7 +93,7 @@ export const manifest: Record<string, SourceManifestEntry> = {
     language: "bilingual",
     tags: ["upanishad", "shruti", "vedanta"],
   },
-  "TaittiriyaUpanishad.pdf": {
+  "taittiriya_upanishad.pdf": {
     title: "Taittiriya Upanishad",
     tradition: "hindu",
     text_type: "upanishad",
@@ -125,7 +125,7 @@ export const manifest: Record<string, SourceManifestEntry> = {
     language: "bilingual",
     tags: ["upanishad", "shruti", "vedanta"],
   },
-  "ManuSmriti.pdf": {
+  "Manu-Smriti-OCR.pdf": {
     title: "Manu Smriti",
     tradition: "hindu",
     text_type: "smriti",
@@ -149,13 +149,300 @@ export const manifest: Record<string, SourceManifestEntry> = {
     language: "bilingual",
     tags: ["smriti", "dharma-shastra"],
   },
-  "BhagvadGita.pdf": {
+  "BhagavadGitaGorakhpur.pdf": {
     title: "Bhagavad Gita",
     tradition: "hindu",
     text_type: "gita",
     translator: null,
     language: "bilingual",
     tags: ["gita", "smriti", "krishna", "vedanta"],
+  },
+
+  // Procedural ritual manuals (Grhya Sutras and dharma sutras) — these
+  // prescribe the actual mechanics of samskaras, sandhyavandanam, agnihotra,
+  // shraddha, and householder rites that the Vedas/Upanishads only allude to.
+  "apastamba__dharma_grihya_sutras.pdf": {
+    title: "Apastamba Dharma & Grihya Sutras",
+    tradition: "hindu",
+    text_type: "ritual_manual",
+    translator: null,
+    language: "bilingual",
+    tags: ["sutra", "grhya-sutra", "dharma-sutra", "ritual", "samskaras", "kalpa", "apastamba"],
+  },
+  "asvalayana-eng.pdf": {
+    title: "Asvalayana Grihya Sutra",
+    tradition: "hindu",
+    text_type: "ritual_manual",
+    translator: null,
+    language: "english",
+    tags: ["sutra", "grhya-sutra", "ritual", "samskaras", "kalpa", "rigveda", "asvalayana"],
+  },
+  "paraskara_eng.pdf": {
+    title: "Paraskara Grihya Sutra",
+    tradition: "hindu",
+    text_type: "ritual_manual",
+    translator: null,
+    language: "english",
+    tags: ["sutra", "grhya-sutra", "ritual", "samskaras", "kalpa", "yajurveda", "paraskara"],
+  },
+
+  // Sectarian agamas — the prescriptive ritual canon for Shaiva and Vaishnava
+  // temple/home worship (puja paddhatis, mantra installation, image worship).
+  "mrgendra-agama-vidya-pada.pdf": {
+    title: "Mrgendra Agama (Vidya Pada)",
+    tradition: "hindu",
+    text_type: "agama",
+    translator: null,
+    language: "bilingual",
+    tags: ["agama", "shaiva", "vidya-pada", "philosophy", "ritual"],
+  },
+  "pancharatraprayoga.pdf": {
+    title: "Pancharatra Prayoga",
+    tradition: "hindu",
+    text_type: "agama",
+    translator: null,
+    language: "bilingual",
+    tags: ["agama", "vaishnava", "pancharatra", "ritual", "puja", "temple"],
+  },
+
+  // Vedantic commentary (Madhva's compendium on the Mahabharata's purport).
+  "TatparyaNirnaya.pdf": {
+    title: "Mahabharata Tatparya Nirnaya",
+    tradition: "hindu",
+    text_type: "philosophy",
+    translator: null,
+    language: "bilingual",
+    tags: ["commentary", "vedanta", "vaishnava", "madhva", "dvaita", "mahabharata"],
+  },
+
+  // Secondary historical / linguistic context.
+  "HISTORY_OF_INDIA_FROM_THE_EARLIEST_TIME_122_AD.pdf": {
+    title: "History of India from the Earliest Times to 1200 AD",
+    tradition: "hindu",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "history", "context"],
+  },
+  "SixtyYearsSanskrit.pdf": {
+    title: "Sixty Years of Sanskrit Studies",
+    tradition: "hindu",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "scholarship", "sanskrit"],
+  },
+
+  // --- Jain texts ---
+
+  // Canonical (Agama)
+  "Jain_Sutra_Excerpts_Aagam.pdf": {
+    title: "Jain Agama Sutra Excerpts",
+    tradition: "jain",
+    text_type: "agama",
+    translator: null,
+    language: "bilingual",
+    tags: ["agama", "sutra", "canon", "shvetambara"],
+  },
+  "jainSutrasPart2.pdf": {
+    title: "Jain Sutras, Part II (Sacred Books of the East, Vol. 45)",
+    tradition: "jain",
+    text_type: "agama",
+    translator: "Hermann Jacobi",
+    language: "english",
+    tags: ["agama", "sutra", "canon", "uttaradhyayana", "sutrakritanga", "shvetambara"],
+  },
+
+  // Foundational philosophical texts
+  "TattvarthaSutra.pdf": {
+    title: "Tattvartha Sutra",
+    tradition: "jain",
+    text_type: "philosophy",
+    book: "Tattvartha Sutra",
+    translator: null,
+    language: "bilingual",
+    tags: ["philosophy", "umasvati", "tattvartha", "metaphysics", "ethics"],
+  },
+  "Samaysaar.pdf": {
+    title: "Samayasara",
+    tradition: "jain",
+    text_type: "philosophy",
+    book: "Samayasara",
+    translator: null,
+    language: "bilingual",
+    tags: ["philosophy", "kundakunda", "digambara", "soul", "atma"],
+  },
+  "pravachansaar.pdf": {
+    title: "Pravachanasara",
+    tradition: "jain",
+    text_type: "philosophy",
+    book: "Pravachanasara",
+    translator: null,
+    language: "bilingual",
+    tags: ["philosophy", "kundakunda", "digambara", "doctrine"],
+  },
+
+  // Secondary scholarly works
+  "Jains_Dundas.pdf": {
+    title: "The Jains (Dundas)",
+    tradition: "jain",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "scholarship", "overview", "history"],
+  },
+  "Jainism_360.pdf": {
+    title: "Jainism 360",
+    tradition: "jain",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "overview", "introduction"],
+  },
+  "Cort on Material Religion.pdf": {
+    title: "Cort on Jain Material Religion",
+    tradition: "jain",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "scholarship", "material-religion", "ritual", "cort"],
+  },
+  "Hegewald Jain temples.pdf": {
+    title: "Hegewald on Jain Temples",
+    tradition: "jain",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "scholarship", "temple", "architecture", "hegewald"],
+  },
+  "Humphrey-ASPECTSJAINPUJA-1984.pdf": {
+    title: "Aspects of Jain Puja (Humphrey, 1984)",
+    tradition: "jain",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "scholarship", "puja", "ritual", "humphrey"],
+  },
+  "The Perfect Body of the Jina and His Imperfect Image file86546.pdf": {
+    title: "The Perfect Body of the Jina and His Imperfect Image",
+    tradition: "jain",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "scholarship", "iconography", "jina", "image"],
+  },
+
+  // Practice/ritual manuals — Pratikraman (repentance avashyaka), Samayika
+  // (equanimity meditation), Shravakacara (lay code of conduct, vows, daily
+  // duties), Preksha Dhyana (Terapanth meditation system).
+  "Pratikraman-English-full-Version.pdf": {
+    title: "Pratikraman (English Full Version)",
+    tradition: "jain",
+    text_type: "ritual_manual",
+    translator: null,
+    language: "english",
+    tags: ["ritual", "pratikraman", "repentance", "avashyaka", "shvetambara"],
+  },
+  "PRatikraman - Narendra.pdf": {
+    title: "Pratikraman (Narendra)",
+    tradition: "jain",
+    text_type: "ritual_manual",
+    translator: null,
+    language: "english",
+    tags: ["ritual", "pratikraman", "repentance", "avashyaka"],
+  },
+  "SAMAYIK.pdf": {
+    title: "Samayik",
+    tradition: "jain",
+    text_type: "ritual_manual",
+    translator: null,
+    language: "english",
+    tags: ["ritual", "samayika", "meditation", "avashyaka", "equanimity"],
+  },
+  "SRVKACAR.pdf": {
+    title: "Shravakacara",
+    tradition: "jain",
+    text_type: "ritual_manual",
+    translator: null,
+    language: "english",
+    tags: ["ritual", "shravakacara", "ethics", "laity", "vrata", "anuvrata"],
+  },
+  "preksha_dhyana.pdf": {
+    title: "Preksha Dhyana",
+    tradition: "jain",
+    text_type: "ritual_manual",
+    translator: null,
+    language: "english",
+    tags: ["ritual", "meditation", "preksha-dhyana", "mahapragya", "terapanth"],
+  },
+
+  // Doctrinal / philosophical reference (Todarmal's Moksha Marg Prakashak is
+  // a foundational Digambara exposition of the path to liberation).
+  "Moksha Marg Prakashak.pdf": {
+    title: "Moksha Marg Prakashak (Todarmal)",
+    tradition: "jain",
+    text_type: "philosophy",
+    translator: null,
+    language: "english",
+    tags: ["philosophy", "digambara", "todarmal", "soul", "moksha", "doctrine"],
+  },
+
+  // Secondary scholarly and introductory works.
+  "12FACETSOFREALITY.pdf": {
+    title: "Twelve Facets of Reality",
+    tradition: "jain",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "anupreksha", "bhavana", "philosophy", "contemplation"],
+  },
+  "AHIMSA.pdf": {
+    title: "Ahimsa (Jain)",
+    tradition: "jain",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "ahimsa", "ethics"],
+  },
+  "First step to JAINISN book 1.pdf": {
+    title: "First Step to Jainism, Book 1",
+    tradition: "jain",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "introduction", "overview"],
+  },
+  "First step to JAINISN  book 2.pdf": {
+    title: "First Step to Jainism, Book 2",
+    tradition: "jain",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "introduction", "overview"],
+  },
+  "HANDBOOK of Jainology.pdf": {
+    title: "Handbook of Jainology",
+    tradition: "jain",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "reference", "overview"],
+  },
+  "Perspectives&PhilosophyInJainism.pdf": {
+    title: "Perspectives & Philosophy in Jainism",
+    tradition: "jain",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "philosophy", "scholarship"],
+  },
+  "Vardhaman.pdf": {
+    title: "Vardhaman (Mahavira biography)",
+    tradition: "jain",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "biography", "mahavira", "tirthankara"],
   },
 };
 

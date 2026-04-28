@@ -9,16 +9,43 @@ export type TextType =
   | "gita"
   | "itihasa"
   | "puranas"
-  | "ritual_manual";
+  | "ritual_manual"
+  | "agama"
+  | "philosophy"
+  | "secondary";
+
+export interface ProfileCity {
+  name: string;
+  lat: number;
+  lon: number;
+  regionSlug: string;
+}
 
 export interface UserProfile {
   uid: string;
   displayName?: string | null;
   email?: string | null;
   lastName?: string | null;
+  // Legacy single-region field. Kept for backward compatibility with existing
+  // Firestore documents; new profiles write to `cities` and `regions` instead.
   region?: string | null;
+  // User-selected cities, each resolved to a cultural region slug.
+  cities?: ProfileCity[];
+  // Deduped region slugs derived from `cities`. Stored separately so the RAG
+  // retriever can do array membership checks without re-classifying.
+  regions?: string[];
+  // Legacy single-language field. Kept in sync with `languages[0]` on write so
+  // older read paths keep working; new code should prefer `languages`.
   language: string;
+  // All languages the user is comfortable reading. Written by the current
+  // profile form; older profiles may only have `language`.
+  languages?: string[];
   sect?: Sect | null;
+  // User-selected traditions. Drives both retrieval filtering and prompt framing.
+  // New profiles write this; legacy profiles may only have `traditionPreference`.
+  traditions?: Tradition[];
+  // Legacy single-tradition field. Kept in sync with `traditions[0]` on write so
+  // older read paths keep working; new code should prefer `traditions`.
   traditionPreference?: Tradition | null;
   experienceLevel: ExperienceLevel;
   deityPreference?: string[];
@@ -120,6 +147,14 @@ export interface ChunkCitation {
   text: string;
 }
 
+// One entry per retrieved source, with all retrieved chunks from that source
+// attached as quotes. Ordered by retrieval rank of the source's best chunk.
+export interface SourceGroup {
+  index: number;
+  source_title: string;
+  quotes: ChunkCitation[];
+}
+
 export interface MatchedGuideRef {
   slug: string;
   title: string;
@@ -127,7 +162,14 @@ export interface MatchedGuideRef {
 
 export interface ChatMessage {
   role: "user" | "assistant";
+  // Raw model output. For assistant messages using the source-first format,
+  // this contains `### SOURCE <N>` and optional `### PRACTICE` sections that
+  // are parsed at render time.
   content: string;
+  // New source-first grouping. Present on messages generated after the UI
+  // rework. Older messages use `citations` and a flat `content`.
+  sources?: SourceGroup[];
+  // Legacy (pre-source-first-rework) flat citation list.
   citations?: ChunkCitation[];
   matchedGuides?: MatchedGuideRef[];
   timestamp: number;
