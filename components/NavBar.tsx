@@ -2,8 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { logOut } from "@/lib/auth/sign-out";
+import { useAuthUser } from "@/lib/auth/use-auth-user";
 
 const LINKS = [
   { href: "/ask", label: "Ask" },
@@ -18,11 +20,27 @@ function isChatPath(pathname: string) {
 
 export default function NavBar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, loading } = useAuthUser();
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => setOpen(false), [pathname]);
 
   if (isChatPath(pathname)) return null;
+
+  const signedIn = Boolean(user);
+
+  async function handleLogout() {
+    setSigningOut(true);
+    try {
+      await logOut();
+      router.push("/");
+      router.refresh();
+    } finally {
+      setSigningOut(false);
+    }
+  }
 
   return (
     <header className="sticky top-0 z-[1100] border-b border-border-warm/80 bg-background/90 backdrop-blur">
@@ -72,6 +90,39 @@ export default function NavBar() {
               </li>
             );
           })}
+          {!loading ? (
+            signedIn ? (
+              <li>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  disabled={signingOut}
+                  className="rounded-full border border-border-strong px-4 py-1.5 text-sm font-medium text-foreground/80 transition hover:bg-saffron-soft hover:text-saffron-dark disabled:opacity-50"
+                >
+                  {signingOut ? "Logging out…" : "Log out"}
+                </button>
+              </li>
+            ) : (
+              <>
+                <li>
+                  <Link
+                    href="/sign-in"
+                    className="rounded-full px-4 py-1.5 text-sm font-medium text-foreground/80 transition hover:bg-saffron-soft hover:text-saffron-dark"
+                  >
+                    Sign in
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/sign-up"
+                    className="rounded-full bg-saffron px-4 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-saffron-dark"
+                  >
+                    Sign up
+                  </Link>
+                </li>
+              </>
+            )
+          ) : null}
         </ul>
 
         <button
@@ -114,6 +165,39 @@ export default function NavBar() {
               </li>
             );
           })}
+          {!loading ? (
+            signedIn ? (
+              <li>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  disabled={signingOut}
+                  className="block w-full rounded-md px-3 py-2 text-left text-sm font-medium text-foreground/80 hover:bg-saffron-soft disabled:opacity-50"
+                >
+                  {signingOut ? "Logging out…" : "Log out"}
+                </button>
+              </li>
+            ) : (
+              <>
+                <li>
+                  <Link
+                    href="/sign-in"
+                    className="block rounded-md px-3 py-2 text-sm font-medium text-foreground/80 hover:bg-saffron-soft"
+                  >
+                    Sign in
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/sign-up"
+                    className="block rounded-md bg-saffron px-3 py-2 text-sm font-semibold text-white"
+                  >
+                    Sign up
+                  </Link>
+                </li>
+              </>
+            )
+          ) : null}
         </ul>
       ) : null}
     </header>

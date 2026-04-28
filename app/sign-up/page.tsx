@@ -1,12 +1,12 @@
 import Image from "next/image";
 import BackLink from "@/components/BackLink";
-import SignInForm from "./sign-in-form";
+import SignInForm from "../sign-in/sign-in-form";
 
 export const metadata = {
-  title: "Sign in — Indic Religion Guide",
+  title: "Sign up — Indic Religion Guide",
 };
 
-export default function SignInPage() {
+export default function SignUpPage() {
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-6 px-6 py-10">
       <BackLink href="/" label="Back to home" />
@@ -20,13 +20,13 @@ export default function SignInPage() {
           />
         </span>
         <h1 className="font-display text-3xl font-semibold text-maroon">
-          Sign in
+          Create an account
         </h1>
         <p className="text-sm leading-relaxed text-foreground/75">
-          Signing in lets us personalize ritual variants to your sect, region,
-          and level. You can also continue as a guest.
+          An account lets us remember your tradition, region, and language so
+          ritual variants come back personalized to you.
         </p>
-        <SignInForm mode="signin" />
+        <SignInForm mode="signup" />
       </div>
     </main>
   );

@@ -10,8 +10,9 @@ import {
 } from "firebase/firestore";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { logOut } from "@/lib/auth/sign-out";
 import { getClientDb } from "@/lib/firebase/client";
 import type { ChatDoc } from "@/lib/types/firestore";
 
@@ -24,7 +25,20 @@ interface Props {
 
 export default function ChatSidebar({ uid, open, onClose, onNewChat }: Props) {
   const pathname = usePathname();
+  const router = useRouter();
   const [chats, setChats] = useState<ChatDoc[] | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+
+  async function handleLogout() {
+    setSigningOut(true);
+    try {
+      await logOut();
+      router.push("/");
+      router.refresh();
+    } finally {
+      setSigningOut(false);
+    }
+  }
 
   useEffect(() => {
     if (!uid) return;
@@ -161,7 +175,7 @@ export default function ChatSidebar({ uid, open, onClose, onNewChat }: Props) {
           )}
         </div>
 
-        <div className="border-t border-border-warm/60 px-3 py-3">
+        <div className="flex flex-col gap-1 border-t border-border-warm/60 px-3 py-3">
           <Link
             href="/profile"
             className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground/80 hover:bg-saffron-soft/60 hover:text-saffron-dark"
@@ -176,6 +190,30 @@ export default function ChatSidebar({ uid, open, onClose, onNewChat }: Props) {
               )}
             </span>
           </Link>
+          {uid ? (
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={signingOut}
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground/70 hover:bg-saffron-soft/60 hover:text-saffron-dark disabled:opacity-50"
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border-warm text-saffron-dark">
+                <svg width="13" height="13" viewBox="0 0 20 20" aria-hidden>
+                  <path
+                    d="M8 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M12 7l3 3-3 3M15 10H8"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                </svg>
+              </span>
+              <span className="font-medium">
+                {signingOut ? "Logging out…" : "Log out"}
+              </span>
+            </button>
+          ) : null}
         </div>
       </aside>
     </>
