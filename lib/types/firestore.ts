@@ -12,6 +12,7 @@ export type TextType =
   | "ritual_manual"
   | "agama"
   | "philosophy"
+  | "ayurveda"
   | "secondary";
 
 export interface ProfileCity {

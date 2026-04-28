@@ -444,6 +444,67 @@ export const manifest: Record<string, SourceManifestEntry> = {
     language: "english",
     tags: ["secondary", "biography", "mahavira", "tirthankara"],
   },
+  "jainpathtopurification.pdf": {
+    title: "The Jaina Path of Purification (Jaini)",
+    tradition: "jain",
+    text_type: "secondary",
+    translator: null,
+    language: "english",
+    tags: ["secondary", "scholarship", "overview", "ratnatraya", "moksha", "ahimsa", "jaini"],
+  },
+
+  // --- Ayurveda (Upaveda of the Atharva Veda; classified as Hindu tradition).
+  // Spans the classical samhita corpus (Charaka), modern scholarly works, and
+  // home/herbal remedy manuals used by laypeople.
+  "Charaka-Samhita-Acharya-Charaka.pdf": {
+    title: "Charaka Samhita",
+    tradition: "hindu",
+    text_type: "ayurveda",
+    book: "Charaka Samhita",
+    translator: null,
+    language: "bilingual",
+    tags: ["ayurveda", "samhita", "classical", "charaka", "medicine", "primary"],
+  },
+  "Beginners-Guide-to-Ayurveda-2021.pdf": {
+    title: "Beginner's Guide to Ayurveda (2021)",
+    tradition: "hindu",
+    text_type: "ayurveda",
+    translator: null,
+    language: "english",
+    tags: ["ayurveda", "introduction", "doshas", "lifestyle", "modern"],
+  },
+  "Ayurvedic-Home-Remedies-English.pdf": {
+    title: "Ayurvedic Home Remedies",
+    tradition: "hindu",
+    text_type: "ayurveda",
+    translator: null,
+    language: "english",
+    tags: ["ayurveda", "remedy", "home", "herbal", "household"],
+  },
+  "The-Complete-Book-of-Ayurvedic-Home-Remedies.pdf": {
+    title: "The Complete Book of Ayurvedic Home Remedies",
+    tradition: "hindu",
+    text_type: "ayurveda",
+    translator: null,
+    language: "english",
+    tags: ["ayurveda", "remedy", "home", "herbal", "household", "reference"],
+  },
+  "herbal_healing_ayurveda.pdf": {
+    title: "Herbal Healing in Ayurveda",
+    tradition: "hindu",
+    text_type: "ayurveda",
+    translator: null,
+    language: "english",
+    tags: ["ayurveda", "herbal", "healing", "plants", "materia-medica"],
+  },
+  "Scientific_Basis_for_Ayurvedic_Therapies.pdf": {
+    title: "Scientific Basis for Ayurvedic Therapies",
+    tradition: "hindu",
+    text_type: "ayurveda",
+    translator: null,
+    language: "english",
+    tags: ["ayurveda", "scientific", "therapy", "research", "secondary"],
+  },
 };
 
 export function lookupManifest(filename: string): SourceManifestEntry | null {

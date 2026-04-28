@@ -35,7 +35,7 @@ export function effectiveTraditions(
 }
 
 const COMPARE_REGEX = /\b(vs\.?|versus|compared?(\s+(to|with))?|differ(ence|s|ent)?|contrast|both\s+(traditions?|hindu|jain))\b/i;
-const HINDU_MENTION_REGEX = /\b(hindu(ism)?|vedic|vedas?|upanishads?|puranas?|smriti|gita|bhagavad|shaiv(a|ism)|vaishnav(a|ism)|smarta|shakta|brahmin|krishna|rama\b|vishnu|shiva|devi|durga|ganesha|lakshmi|saraswati)\b/i;
+const HINDU_MENTION_REGEX = /\b(hindu(ism)?|vedic|vedas?|upanishads?|puranas?|smriti|gita|bhagavad|shaiv(a|ism)|vaishnav(a|ism)|smarta|shakta|brahmin|krishna|rama\b|vishnu|shiva|devi|durga|ganesha|lakshmi|saraswati|ayurved(a|ic)|doshas?|vata|pitta|kapha|tridoshas?|panchakarma|rasayana|abhyanga|shirodhara|charaka|sushruta|vagbhata)\b/i;
 const JAIN_MENTION_REGEX = /\b(jain(ism|a)?|tirthankar(a)?s?|digambara|sh?vetambara|kundakunda|tattvartha|samayasara|pravachanasara|jina|mahavira|parshv?anatha?|agamas?(?!\s*sutra))\b/i;
 
 // Returns true when the question references a tradition the user hasn't
