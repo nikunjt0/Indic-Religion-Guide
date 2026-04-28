@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, Geist, Geist_Mono } from "next/font/google";
+import { Suspense } from "react";
 import NavBar from "@/components/NavBar";
 import "./globals.css";
 
@@ -36,7 +37,9 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <NavBar />
+        <Suspense fallback={null}>
+          <NavBar />
+        </Suspense>
         <div className="flex flex-1 flex-col">{children}</div>
       </body>
     </html>
