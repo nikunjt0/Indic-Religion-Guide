@@ -1,9 +1,18 @@
+import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import BackLink from "@/components/BackLink";
+import { getSessionUser } from "@/lib/auth/session";
 import ChatsList from "./chats-list";
 
 export const metadata = {
   title: "Chat history — Indic Religion Guide",
 };
+
+async function ChatsBody() {
+  const user = await getSessionUser();
+  if (!user) redirect("/sign-in?next=%2Fchats");
+  return <ChatsList uid={user.uid} />;
+}
 
 export default function ChatsPage() {
   return (
@@ -20,7 +29,9 @@ export default function ChatsPage() {
           </p>
         </div>
       </header>
-      <ChatsList />
+      <Suspense fallback={<p className="text-sm text-muted">Loading your chats…</p>}>
+        <ChatsBody />
+      </Suspense>
     </main>
   );
 }

@@ -1,34 +1,37 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { ensureAnonUser } from "@/lib/auth/ensure-anon";
 import ChatSidebar from "@/components/ChatSidebar";
+import { useAuthUser } from "@/lib/auth/use-auth-user";
 
 interface Props {
   children: (ctx: {
-    uid: string | null;
-    isAnon: boolean;
+    uid: string;
     newChatKey: number;
   }) => ReactNode;
-  initialUid?: string;
+  initialUid: string;
 }
 
-// Full-height shell used by /ask and /chats/[id]. Owns auth + sidebar toggle
-// and hands the resolved uid to the inner chat content via a render prop so
-// we only trigger anon sign-in once per mount.
+// Full-height shell used by /ask and /chats/[id]. The page-level server
+// component is responsible for redirecting unauthenticated users to /sign-in
+// and passes the resolved uid via initialUid. The client falls back to the
+// Firebase auth state and bounces to /sign-in if the SDK reports signed out
+// (e.g. user signed out in another tab).
 export default function ChatShell({ children, initialUid }: Props) {
-  const [uid, setUid] = useState<string | null>(initialUid ?? null);
-  const [isAnon, setIsAnon] = useState(true);
+  const router = useRouter();
+  const { user, loading } = useAuthUser();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newChatKey, setNewChatKey] = useState(0);
 
   useEffect(() => {
-    if (initialUid) return;
-    ensureAnonUser().then((user) => {
-      setUid(user.uid);
-      setIsAnon(user.isAnonymous);
-    });
-  }, [initialUid]);
+    if (loading) return;
+    if (!user || user.isAnonymous) {
+      router.replace("/sign-in");
+    }
+  }, [loading, user, router]);
+
+  const uid = user && !user.isAnonymous ? user.uid : initialUid;
 
   return (
     <div className="flex min-h-screen w-full bg-background">
@@ -65,7 +68,7 @@ export default function ChatShell({ children, initialUid }: Props) {
         </div>
 
         <div className="flex flex-1 flex-col">
-          {children({ uid, isAnon, newChatKey })}
+          {children({ uid, newChatKey })}
         </div>
       </div>
     </div>

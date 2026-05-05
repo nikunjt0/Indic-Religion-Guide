@@ -7,30 +7,25 @@ import ChatShell from "@/components/ChatShell";
 import { getClientDb } from "@/lib/firebase/client";
 import type { ChatDoc } from "@/lib/types/firestore";
 
-export default function ChatClient({ chatId }: { chatId: string }) {
+export default function ChatClient({
+  chatId,
+  uid,
+}: {
+  chatId: string;
+  uid: string;
+}) {
   return (
-    <ChatShell>
-      {({ uid, isAnon }) => (
-        <ChatBody uid={uid} isAnon={isAnon} chatId={chatId} />
-      )}
+    <ChatShell initialUid={uid}>
+      {({ uid }) => <ChatBody uid={uid} chatId={chatId} />}
     </ChatShell>
   );
 }
 
-function ChatBody({
-  uid,
-  isAnon,
-  chatId,
-}: {
-  uid: string | null;
-  isAnon: boolean;
-  chatId: string;
-}) {
+function ChatBody({ uid, chatId }: { uid: string; chatId: string }) {
   const [chat, setChat] = useState<ChatDoc | null | "missing">(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!uid) return;
     const ref = doc(getClientDb(), "users", uid, "chats", chatId);
     const unsub = onSnapshot(
       ref,
@@ -56,7 +51,7 @@ function ChatBody({
     );
   }
 
-  if (!uid || chat === null) {
+  if (chat === null) {
     return (
       <div className="mx-auto w-full max-w-3xl px-5 py-6">
         <p className="text-sm text-muted">Loading chat…</p>
@@ -76,5 +71,5 @@ function ChatBody({
     );
   }
 
-  return <ChatPanel uid={uid} isAnon={isAnon} initialChat={chat} />;
+  return <ChatPanel uid={uid} initialChat={chat} />;
 }

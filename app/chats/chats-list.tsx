@@ -10,7 +10,6 @@ import {
 } from "firebase/firestore";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ensureAnonUser } from "@/lib/auth/ensure-anon";
 import { getClientDb } from "@/lib/firebase/client";
 import type { ChatDoc } from "@/lib/types/firestore";
 
@@ -23,17 +22,11 @@ function formatTime(ts: number): string {
     : d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-export default function ChatsList() {
-  const [uid, setUid] = useState<string | null>(null);
+export default function ChatsList({ uid }: { uid: string }) {
   const [chats, setChats] = useState<ChatDoc[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    ensureAnonUser().then((user) => setUid(user.uid));
-  }, []);
-
-  useEffect(() => {
-    if (!uid) return;
     const db = getClientDb();
     const q = query(
       collection(db, "users", uid, "chats"),
@@ -51,12 +44,11 @@ export default function ChatsList() {
   }, [uid]);
 
   async function handleDelete(id: string) {
-    if (!uid) return;
     if (!confirm("Delete this chat? This cannot be undone.")) return;
     await deleteDoc(doc(getClientDb(), "users", uid, "chats", id));
   }
 
-  if (!uid || chats === null) {
+  if (chats === null) {
     return <p className="text-sm text-muted">Loading your chats…</p>;
   }
 

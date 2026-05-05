@@ -2,15 +2,9 @@
 
 import {
   createUserWithEmailAndPassword,
-  EmailAuthProvider,
   GoogleAuthProvider,
-  linkWithCredential,
-  linkWithPopup,
-  signInAnonymously,
   signInWithEmailAndPassword,
   signInWithPopup,
-  type User,
-  type UserCredential,
 } from "firebase/auth";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -57,20 +51,9 @@ export default function SignInForm({ mode }: Props) {
     setError(null);
     try {
       const auth = getClientAuth();
-      const anon = currentAnon(auth.currentUser);
-      let cred: UserCredential;
-      if (anon && isSignUp) {
-        // Upgrade the anonymous user in place so their pending chat (saved
-        // under the anon UID) carries over to the real account.
-        cred = await linkWithCredential(
-          anon,
-          EmailAuthProvider.credential(email, password),
-        );
-      } else if (isSignUp) {
-        cred = await createUserWithEmailAndPassword(auth, email, password);
-      } else {
-        cred = await signInWithEmailAndPassword(auth, email, password);
-      }
+      const cred = isSignUp
+        ? await createUserWithEmailAndPassword(auth, email, password)
+        : await signInWithEmailAndPassword(auth, email, password);
       await persistSession(await cred.user.getIdToken());
       router.push(next);
     } catch (e) {
@@ -84,50 +67,12 @@ export default function SignInForm({ mode }: Props) {
     setBusy("google");
     setError(null);
     try {
-      const auth = getClientAuth();
-      const anon = currentAnon(auth.currentUser);
-      const cred = anon
-        ? await linkWithPopup(anon, new GoogleAuthProvider())
-        : await signInWithPopup(auth, new GoogleAuthProvider());
+      const cred = await signInWithPopup(
+        getClientAuth(),
+        new GoogleAuthProvider(),
+      );
       await persistSession(await cred.user.getIdToken());
       router.push(next);
-    } catch (e) {
-      // If the Google account is already linked to another Firebase user,
-      // linkWithPopup throws `auth/credential-already-in-use`. Fall back to a
-      // plain sign-in so the user can still get into their existing account
-      // (the anon chat is lost in that case, which is unavoidable).
-      const code = (e as { code?: string }).code;
-      if (code === "auth/credential-already-in-use") {
-        try {
-          const cred = await signInWithPopup(
-            getClientAuth(),
-            new GoogleAuthProvider(),
-          );
-          await persistSession(await cred.user.getIdToken());
-          router.push(next);
-          return;
-        } catch (e2) {
-          setError((e2 as Error).message);
-          return;
-        }
-      }
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function handleGuest() {
-    setBusy("guest");
-    setError(null);
-    try {
-      const auth = getClientAuth();
-      const cred = await signInAnonymously(auth);
-      await persistSession(await cred.user.getIdToken());
-      // Send guests through the profile page first so they pick a tradition
-      // (Hindu / Jain / both) before asking — that selection drives retrieval
-      // and prompt framing.
-      router.push("/profile");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -193,13 +138,6 @@ export default function SignInForm({ mode }: Props) {
       >
         {busy === "google" ? "Opening Google…" : "Continue with Google"}
       </button>
-      <button
-        className="rounded-full border border-border-strong bg-surface px-5 py-2.5 text-sm font-semibold text-saffron-dark transition hover:bg-saffron-soft disabled:opacity-40"
-        disabled={busy !== null}
-        onClick={handleGuest}
-      >
-        {busy === "guest" ? "Entering…" : "Continue as guest"}
-      </button>
 
       {error ? (
         <p className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -232,10 +170,6 @@ export default function SignInForm({ mode }: Props) {
       </p>
     </div>
   );
-}
-
-function currentAnon(user: User | null): User | null {
-  return user && user.isAnonymous ? user : null;
 }
 
 function nextQuery(raw: string | null): string {

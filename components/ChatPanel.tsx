@@ -18,17 +18,16 @@ import type {
   SourceGroup,
 } from "@/lib/types/firestore";
 
+interface Props {
+  uid: string;
+  initialChat?: ChatDoc;
+}
+
 interface ClarifyEvent {
   type: "clarify";
   field?: string;
   question: string;
   options?: { key: string; label: string }[];
-}
-
-interface Props {
-  uid: string | null;
-  isAnon: boolean;
-  initialChat?: ChatDoc;
 }
 
 interface StreamingState {
@@ -44,7 +43,7 @@ const SUGGESTIONS = [
   "Which fasting days apply to a Vaishnava householder?",
 ];
 
-export default function ChatPanel({ uid, isAnon, initialChat }: Props) {
+export default function ChatPanel({ uid, initialChat }: Props) {
   const [chatId, setChatId] = useState<string | null>(initialChat?.id ?? null);
   const [messages, setMessages] = useState<ChatMessage[]>(
     initialChat?.messages ?? [],
@@ -59,14 +58,7 @@ export default function ChatPanel({ uid, isAnon, initialChat }: Props) {
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [anonGate, setAnonGate] = useState(false);
-  const answeredOnce = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  const nextParam =
-    typeof window !== "undefined"
-      ? encodeURIComponent(window.location.pathname + window.location.search)
-      : "";
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -78,7 +70,6 @@ export default function ChatPanel({ uid, isAnon, initialChat }: Props) {
   const isEmpty = messages.length === 0 && !streaming && !clarify;
 
   async function persistChat(nextMessages: ChatMessage[], titleHint?: string) {
-    if (!uid) return null;
     const db = getClientDb();
     const now = Date.now();
 
@@ -206,11 +197,6 @@ export default function ChatPanel({ uid, isAnon, initialChat }: Props) {
         setPendingQuestion(null);
         await persistChat(finalMessages, question);
       }
-
-      if (!answeredOnce.current && isAnon && !gotClarify) {
-        answeredOnce.current = true;
-        setAnonGate(true);
-      }
     } catch (e) {
       setError((e as Error).message);
       setStreaming(null);
@@ -220,7 +206,6 @@ export default function ChatPanel({ uid, isAnon, initialChat }: Props) {
   }
 
   async function sendQuestion(question: string) {
-    if (!uid) return;
     const trimmed = question.trim();
     if (!trimmed) return;
 
@@ -262,18 +247,16 @@ export default function ChatPanel({ uid, isAnon, initialChat }: Props) {
           }
         }}
         placeholder={
-          anonGate
-            ? "Sign up to keep asking…"
-            : isEmpty
-              ? "Ask a question…"
-              : "Ask a follow-up… (Shift+Enter for newline)"
+          isEmpty
+            ? "Ask a question…"
+            : "Ask a follow-up… (Shift+Enter for newline)"
         }
-        disabled={loading || anonGate}
+        disabled={loading}
       />
       <div className="flex items-center justify-end gap-2">
         <button
           type="submit"
-          disabled={!uid || loading || anonGate || !input.trim()}
+          disabled={loading || !input.trim()}
           className="rounded-full bg-saffron px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-saffron-dark disabled:opacity-50"
         >
           {loading ? "Thinking…" : "Send"}
@@ -304,7 +287,7 @@ export default function ChatPanel({ uid, isAnon, initialChat }: Props) {
               key={s}
               type="button"
               onClick={() => sendQuestion(s)}
-              disabled={!uid || loading}
+              disabled={loading}
               className="rounded-full border border-border-warm bg-surface/80 px-3.5 py-1.5 text-xs text-foreground/75 transition hover:border-saffron hover:bg-saffron-soft hover:text-saffron-dark disabled:opacity-50"
             >
               {s}
@@ -321,65 +304,12 @@ export default function ChatPanel({ uid, isAnon, initialChat }: Props) {
     );
   }
 
-  // When gated, blur only the most recent assistant message — the user's
-  // question (and any earlier messages, which won't exist for first-prompt
-  // anons) stays clear so the gate feels like a paywall on the answer, not on
-  // the conversation.
-  const lastAssistantIdx = (() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "assistant") return i;
-    }
-    return -1;
-  })();
-
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-5 px-5 py-6">
       <div ref={scrollRef} className="flex flex-col gap-4">
-        {messages.map((m, i) => {
-          const blurred = anonGate && i === lastAssistantIdx;
-          return (
-            <div key={i} className="relative">
-              <div
-                className={
-                  blurred
-                    ? "pointer-events-none select-none blur-md"
-                    : undefined
-                }
-                aria-hidden={blurred || undefined}
-              >
-                <MessageBubble message={m} />
-              </div>
-              {blurred ? (
-                <div className="absolute inset-0 flex items-center justify-center p-4">
-                  <div className="flex max-w-sm flex-col items-center gap-3 rounded-2xl border border-border-strong bg-surface/95 p-5 text-center shadow-lg backdrop-blur">
-                    <span className="devanagari text-2xl text-saffron">ॐ</span>
-                    <p className="text-sm font-medium text-maroon">
-                      Your answer is ready
-                    </p>
-                    <p className="text-xs text-foreground/70">
-                      Create a free account to read it and personalize future
-                      answers to your sect, region, and level.
-                    </p>
-                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                      <Link
-                        href={`/sign-up?next=${nextParam}`}
-                        className="rounded-full bg-saffron px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-saffron-dark"
-                      >
-                        Sign up to see answer
-                      </Link>
-                      <Link
-                        href={`/sign-in?next=${nextParam}`}
-                        className="rounded-full border border-border-strong bg-surface px-4 py-1.5 text-xs font-semibold text-saffron-dark transition hover:bg-saffron-soft"
-                      >
-                        Sign in
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
+        {messages.map((m, i) => (
+          <MessageBubble key={i} message={m} />
+        ))}
 
         {streaming ? (
           <AssistantBubble

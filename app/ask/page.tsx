@@ -14,18 +14,17 @@ export const metadata = {
 // check. Boundary is tight so the rest of the page can prerender.
 async function AskGate() {
   const user = await getSessionUser();
-  if (user) {
-    const snap = await adminDb.collection("users").doc(user.uid).get();
-    const profile = snap.exists ? (snap.data() as UserProfile) : null;
-    const hasTradition =
-      (profile?.traditions && profile.traditions.length > 0) ||
-      Boolean(profile?.traditionPreference);
-    // Force the user to pick a tradition before they can ask. The choice drives
-    // retrieval filtering and prompt framing — an unset profile would silently
-    // fall back to "all sources", which isn't what the user signed up for.
-    if (!hasTradition) redirect("/profile");
-  }
-  return <AskClient />;
+  if (!user) redirect("/sign-in?next=%2Fask");
+  const snap = await adminDb.collection("users").doc(user.uid).get();
+  const profile = snap.exists ? (snap.data() as UserProfile) : null;
+  const hasTradition =
+    (profile?.traditions && profile.traditions.length > 0) ||
+    Boolean(profile?.traditionPreference);
+  // Force the user to pick a tradition before they can ask. The choice drives
+  // retrieval filtering and prompt framing — an unset profile would silently
+  // fall back to "all sources", which isn't what the user signed up for.
+  if (!hasTradition) redirect("/profile");
+  return <AskClient uid={user.uid} />;
 }
 
 export default function AskPage() {
