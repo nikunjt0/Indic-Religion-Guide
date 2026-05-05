@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { logOut } from "@/lib/auth/sign-out";
 import { useAuthUser } from "@/lib/auth/use-auth-user";
@@ -20,7 +20,6 @@ function isChatPath(pathname: string) {
 
 export default function NavBar() {
   const pathname = usePathname();
-  const router = useRouter();
   const { user, loading } = useAuthUser();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -33,11 +32,12 @@ export default function NavBar() {
 
   async function handleLogout() {
     setSigningOut(true);
+    // logOut() ends with a hard window.location.assign, so we never reach
+    // the finally branch — but if it throws before navigating we still want
+    // to release the spinner.
     try {
       await logOut();
-      router.push("/");
-      router.refresh();
-    } finally {
+    } catch {
       setSigningOut(false);
     }
   }

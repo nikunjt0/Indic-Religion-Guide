@@ -10,7 +10,7 @@ import {
 } from "firebase/firestore";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { logOut } from "@/lib/auth/sign-out";
 import { getClientDb } from "@/lib/firebase/client";
@@ -25,7 +25,6 @@ interface Props {
 
 export default function ChatSidebar({ uid, open, onClose, onNewChat }: Props) {
   const pathname = usePathname();
-  const router = useRouter();
   const [chats, setChats] = useState<ChatDoc[] | null>(null);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -33,9 +32,7 @@ export default function ChatSidebar({ uid, open, onClose, onNewChat }: Props) {
     setSigningOut(true);
     try {
       await logOut();
-      router.push("/");
-      router.refresh();
-    } finally {
+    } catch {
       setSigningOut(false);
     }
   }
