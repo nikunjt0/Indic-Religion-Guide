@@ -9,9 +9,21 @@ export async function POST(req: Request) {
   if (typeof idToken !== "string") {
     return Response.json({ error: "idToken required" }, { status: 400 });
   }
-  const cookie = await adminAuth.createSessionCookie(idToken, {
-    expiresIn: FIVE_DAYS_MS,
-  });
+  let cookie: string;
+  try {
+    cookie = await adminAuth.createSessionCookie(idToken, {
+      expiresIn: FIVE_DAYS_MS,
+    });
+  } catch (err) {
+    // Most common cause: FIREBASE_* env vars missing on the server, or the
+    // ID token is from a different project. Without surfacing this we'd just
+    // see a silent "always redirect to sign-in" loop on protected routes.
+    console.error("createSessionCookie failed", err);
+    return Response.json(
+      { error: (err as Error).message ?? "session cookie failed" },
+      { status: 500 },
+    );
+  }
   const store = await cookies();
   store.set(SESSION_COOKIE, cookie, {
     httpOnly: true,

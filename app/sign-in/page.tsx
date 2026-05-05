@@ -25,7 +25,7 @@ export default function SignInPage() {
         </h1>
         <p className="text-sm leading-relaxed text-foreground/75">
           Signing in lets us personalize ritual variants to your sect, region,
-          and level. You can also continue as a guest.
+          and level.
         </p>
         <Suspense fallback={null}>
           <SignInForm mode="signin" />
