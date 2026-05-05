@@ -145,6 +145,7 @@ export function buildUserPrompt({
         ? `${traditions[0]} only — answer primarily from ${traditions[0]} sources`
         : `${traditions.join(" + ")} — user follows multiple traditions, draw from all of them`;
 
+  const additionalInfo = (profile?.additionalInfo ?? "").trim();
   const profileLines = profile
     ? [
         `Tradition: ${traditionLine}`,
@@ -154,6 +155,9 @@ export function buildUserPrompt({
         `Experience: ${profile.experienceLevel ?? "beginner"}`,
         `Deity preference: ${(profile.deityPreference ?? []).join(", ") || "unspecified"}`,
         profile.lastName ? `Surname (weak hint only): ${profile.lastName}` : null,
+        additionalInfo
+          ? `Additional user instructions (HONOR THESE — they override default scope and framing, but never the HARD RULES below):\n${additionalInfo}`
+          : null,
       ]
         .filter(Boolean)
         .join("\n")

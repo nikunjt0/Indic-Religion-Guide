@@ -87,6 +87,7 @@ export default function ProfileForm({ uid, email, initial }: Props) {
     sect: (initial?.sect ?? "") as Sect | "",
     experienceLevel: initial?.experienceLevel ?? "beginner",
     deityPreference: (initial?.deityPreference ?? []).join(", "),
+    additionalInfo: initial?.additionalInfo ?? "",
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -136,6 +137,7 @@ export default function ProfileForm({ uid, email, initial }: Props) {
               .map((s) => s.trim())
               .filter(Boolean)
           : [],
+        additionalInfo: state.additionalInfo.trim() || null,
         isAnonymous: !email,
         updatedAt: now,
       };
@@ -273,6 +275,26 @@ export default function ProfileForm({ uid, email, initial }: Props) {
           }
         />
       </Field>
+      <label className="flex flex-col gap-1.5">
+        <span className="text-sm font-semibold text-foreground/90">
+          Additional info
+        </span>
+        <span className="text-xs text-foreground/65">
+          Free-form instructions for the guru. For example: &ldquo;ignore the
+          Vedas and classical texts, focus only on the Upanishads and Gita,&rdquo;
+          or &ldquo;skip Sanskrit, English only,&rdquo; or &ldquo;I follow
+          Shvetambara Murtipujak&mdash;answer accordingly.&rdquo;
+        </span>
+        <textarea
+          className={`${fieldClass} min-h-[5.5rem] resize-y`}
+          placeholder="Anything else we should know?"
+          value={state.additionalInfo}
+          onChange={(e) =>
+            setState({ ...state, additionalInfo: e.target.value })
+          }
+          maxLength={2000}
+        />
+      </label>
       <div className="flex items-center gap-3 pt-2">
         <button
           className="rounded-full bg-saffron px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-saffron-dark disabled:opacity-50"

@@ -50,6 +50,9 @@ export interface UserProfile {
   traditionPreference?: Tradition | null;
   experienceLevel: ExperienceLevel;
   deityPreference?: string[];
+  // Free-form preferences the user wants the guru to honor (e.g. "ignore the
+  // Vedas, focus on Upanishads and Gita"). Surfaced in the prompt verbatim.
+  additionalInfo?: string | null;
   isAnonymous: boolean;
   createdAt: number;
   updatedAt: number;

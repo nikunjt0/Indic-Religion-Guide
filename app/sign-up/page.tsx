@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { Suspense } from "react";
 import BackLink from "@/components/BackLink";
 import SignInForm from "../sign-in/sign-in-form";
 
@@ -26,7 +27,9 @@ export default function SignUpPage() {
           An account lets us remember your tradition, region, and language so
           ritual variants come back personalized to you.
         </p>
-        <SignInForm mode="signup" />
+        <Suspense fallback={null}>
+          <SignInForm mode="signup" />
+        </Suspense>
       </div>
     </main>
   );

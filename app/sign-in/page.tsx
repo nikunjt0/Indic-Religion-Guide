@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { Suspense } from "react";
 import BackLink from "@/components/BackLink";
 import SignInForm from "./sign-in-form";
 
@@ -26,7 +27,9 @@ export default function SignInPage() {
           Signing in lets us personalize ritual variants to your sect, region,
           and level. You can also continue as a guest.
         </p>
-        <SignInForm mode="signin" />
+        <Suspense fallback={null}>
+          <SignInForm mode="signin" />
+        </Suspense>
       </div>
     </main>
   );

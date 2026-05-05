@@ -59,9 +59,14 @@ export default function ChatPanel({ uid, isAnon, initialChat }: Props) {
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showProfileNudge, setShowProfileNudge] = useState(false);
+  const [anonGate, setAnonGate] = useState(false);
   const answeredOnce = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const nextParam =
+    typeof window !== "undefined"
+      ? encodeURIComponent(window.location.pathname + window.location.search)
+      : "";
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -204,7 +209,7 @@ export default function ChatPanel({ uid, isAnon, initialChat }: Props) {
 
       if (!answeredOnce.current && isAnon && !gotClarify) {
         answeredOnce.current = true;
-        setShowProfileNudge(true);
+        setAnonGate(true);
       }
     } catch (e) {
       setError((e as Error).message);
@@ -257,16 +262,18 @@ export default function ChatPanel({ uid, isAnon, initialChat }: Props) {
           }
         }}
         placeholder={
-          isEmpty
-            ? "Ask a question…"
-            : "Ask a follow-up… (Shift+Enter for newline)"
+          anonGate
+            ? "Sign up to keep asking…"
+            : isEmpty
+              ? "Ask a question…"
+              : "Ask a follow-up… (Shift+Enter for newline)"
         }
-        disabled={loading}
+        disabled={loading || anonGate}
       />
       <div className="flex items-center justify-end gap-2">
         <button
           type="submit"
-          disabled={!uid || loading || !input.trim()}
+          disabled={!uid || loading || anonGate || !input.trim()}
           className="rounded-full bg-saffron px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-saffron-dark disabled:opacity-50"
         >
           {loading ? "Thinking…" : "Send"}
@@ -314,12 +321,65 @@ export default function ChatPanel({ uid, isAnon, initialChat }: Props) {
     );
   }
 
+  // When gated, blur only the most recent assistant message — the user's
+  // question (and any earlier messages, which won't exist for first-prompt
+  // anons) stays clear so the gate feels like a paywall on the answer, not on
+  // the conversation.
+  const lastAssistantIdx = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") return i;
+    }
+    return -1;
+  })();
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-5 px-5 py-6">
       <div ref={scrollRef} className="flex flex-col gap-4">
-        {messages.map((m, i) => (
-          <MessageBubble key={i} message={m} />
-        ))}
+        {messages.map((m, i) => {
+          const blurred = anonGate && i === lastAssistantIdx;
+          return (
+            <div key={i} className="relative">
+              <div
+                className={
+                  blurred
+                    ? "pointer-events-none select-none blur-md"
+                    : undefined
+                }
+                aria-hidden={blurred || undefined}
+              >
+                <MessageBubble message={m} />
+              </div>
+              {blurred ? (
+                <div className="absolute inset-0 flex items-center justify-center p-4">
+                  <div className="flex max-w-sm flex-col items-center gap-3 rounded-2xl border border-border-strong bg-surface/95 p-5 text-center shadow-lg backdrop-blur">
+                    <span className="devanagari text-2xl text-saffron">ॐ</span>
+                    <p className="text-sm font-medium text-maroon">
+                      Your answer is ready
+                    </p>
+                    <p className="text-xs text-foreground/70">
+                      Create a free account to read it and personalize future
+                      answers to your sect, region, and level.
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                      <Link
+                        href={`/sign-up?next=${nextParam}`}
+                        className="rounded-full bg-saffron px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-saffron-dark"
+                      >
+                        Sign up to see answer
+                      </Link>
+                      <Link
+                        href={`/sign-in?next=${nextParam}`}
+                        className="rounded-full border border-border-strong bg-surface px-4 py-1.5 text-xs font-semibold text-saffron-dark transition hover:bg-saffron-soft"
+                      >
+                        Sign in
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
 
         {streaming ? (
           <AssistantBubble
@@ -355,20 +415,6 @@ export default function ChatPanel({ uid, isAnon, initialChat }: Props) {
       </div>
 
       <div className="sticky bottom-4 z-10">{composer}</div>
-
-      {showProfileNudge ? (
-        <aside className="flex items-center justify-between gap-3 rounded-2xl border border-border-warm bg-saffron-soft/60 p-4 text-sm">
-          <span className="text-foreground/85">
-            Set your sect, region, and level for more personalized answers.
-          </span>
-          <Link
-            href="/sign-in"
-            className="rounded-full bg-saffron px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-saffron-dark"
-          >
-            Set profile
-          </Link>
-        </aside>
-      ) : null}
     </div>
   );
 }
@@ -482,14 +528,26 @@ function AssistantBubble({
 
       {sources.length > 0 ? (
         <div className="flex flex-col gap-3">
-          {sources.map((s) => (
-            <SourceSection
-              key={`${s.index}-${s.source_title}`}
-              source={s}
-              summary={parsed.bySourceIndex[s.index] ?? ""}
-              streaming={streaming}
-            />
-          ))}
+          {sources
+            .filter((s) => {
+              // Hide sources the model marked NOT_RELEVANT — but only once the
+              // section's body has finished streaming, so we don't flicker the
+              // card out before the model has actually written its summary.
+              const summary = (parsed.bySourceIndex[s.index] ?? "").trim();
+              if (summary.toUpperCase() !== "NOT_RELEVANT") return true;
+              const nextSourcePresent =
+                parsed.bySourceIndex[s.index + 1] !== undefined;
+              const sectionDone = !streaming || nextSourcePresent;
+              return !sectionDone;
+            })
+            .map((s) => (
+              <SourceSection
+                key={`${s.index}-${s.source_title}`}
+                source={s}
+                summary={parsed.bySourceIndex[s.index] ?? ""}
+                streaming={streaming}
+              />
+            ))}
         </div>
       ) : null}
 
