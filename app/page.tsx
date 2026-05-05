@@ -30,8 +30,7 @@ export default function Home() {
           </h1>
           <p className="mx-auto max-w-2xl text-base leading-relaxed text-foreground/80 sm:text-lg">
             An Indic religion guide that answers ritual-practice questions by
-            citing the Vedas, Upanishads, Smritis, and Gita — and falls back to
-            curated ritual procedures when the texts don&apos;t spell it out.
+            citing the exact texts our traditions are built on.
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-3">
