@@ -14,6 +14,20 @@
       ]
     },
     {
+      "collectionGroup": "chunks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "text_type", "order": "ASCENDING" },
+        {
+          "fieldPath": "embedding",
+          "vectorConfig": {
+            "dimension": 1536,
+            "flat": {}
+          }
+        }
+      ]
+    },
+    {
       "collectionGroup": "ritualGuides",
       "queryScope": "COLLECTION",
       "fields": [

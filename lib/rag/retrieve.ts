@@ -78,20 +78,54 @@ export async function findNearestChunks(
   const isFiltered =
     traditions.length === 1 && ALL_TRADITIONS.includes(traditions[0]);
   const baseCollection = adminDb.collection("chunks");
-  const queryRef = isFiltered
-    ? baseCollection.where("tradition", "==", traditions[0])
-    : baseCollection;
 
-  const snap = await queryRef
-    .findNearest({
-      vectorField: "embedding",
-      queryVector: FieldValue.vector(queryVector),
-      limit: k,
-      distanceMeasure: "COSINE",
-    })
-    .get();
+  // Ayurveda is the indigenous medical system of the subcontinent and was
+  // shared across Hindu and Jain communities historically; we tag it
+  // tradition="hindu" in the corpus, but it should retrieve for non-Hindu
+  // users too. When narrowing to a single non-Hindu tradition, run a parallel
+  // ayurveda-only query and merge by distance so healing/remedy questions
+  // surface ayurvedic sources alongside the user's own tradition.
+  const queryRefs: FirebaseFirestore.Query[] = [];
+  if (isFiltered) {
+    queryRefs.push(baseCollection.where("tradition", "==", traditions[0]));
+    if (traditions[0] !== "hindu") {
+      queryRefs.push(baseCollection.where("text_type", "==", "ayurveda"));
+    }
+  } else {
+    queryRefs.push(baseCollection);
+  }
 
-  const chunks = snap.docs.map((d) => d.data() as ChunkDoc);
+  const snaps = await Promise.all(
+    queryRefs.map((q) =>
+      q
+        .findNearest({
+          vectorField: "embedding",
+          queryVector: FieldValue.vector(queryVector),
+          limit: k,
+          distanceMeasure: "COSINE",
+          distanceResultField: "_distance",
+        })
+        .get(),
+    ),
+  );
+
+  // Merge across queries by distance, dedupe by id, take top K. Distances are
+  // comparable across the parallel queries because both use the same metric
+  // and query vector.
+  const all = snaps.flatMap((s) =>
+    s.docs.map((d) => d.data() as ChunkDoc & { _distance: number }),
+  );
+  all.sort((a, b) => a._distance - b._distance);
+  const seen = new Set<string>();
+  const chunks: ChunkDoc[] = [];
+  for (const c of all) {
+    if (seen.has(c.id)) continue;
+    seen.add(c.id);
+    const { _distance: _d, ...chunk } = c;
+    chunks.push(chunk as ChunkDoc);
+    if (chunks.length >= k) break;
+  }
+
   const sourceIds = Array.from(new Set(chunks.map((c) => c.sourceId)));
   const titleMap = new Map<string, string>();
 
