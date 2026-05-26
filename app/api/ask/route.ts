@@ -14,7 +14,6 @@ import {
   embedQuery,
   findNearestChunks,
   matchGuides,
-  resolveRetrievalTraditions,
 } from "@/lib/rag/retrieve";
 import type { UserProfile } from "@/lib/types/firestore";
 
@@ -93,10 +92,7 @@ export async function POST(req: Request) {
     embedQuery(retrievalQuery),
     matchGuides(question, profile),
   ]);
-  // Honor the user's tradition selection unless the question crosses traditions
-  // (explicit comparison, or naming a tradition the user didn't select).
-  const allowedTraditions = resolveRetrievalTraditions(profile, retrievalQuery);
-  const chunks = await findNearestChunks(queryVec, 8, allowedTraditions);
+  const chunks = await findNearestChunks(queryVec, 8);
   const grouped = groupChunksBySource(chunks);
 
   // Ship the grouped retrieval up front so the client can render source cards

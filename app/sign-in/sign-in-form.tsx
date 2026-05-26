@@ -8,7 +8,6 @@ import {
   signOut,
   type UserCredential,
 } from "firebase/auth";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { getClientAuth } from "@/lib/firebase/client";
@@ -196,35 +195,6 @@ export default function SignInForm({ mode }: Props) {
           {error}
         </p>
       ) : null}
-
-      <p className="pt-1 text-center text-xs text-foreground/70">
-        {isSignUp ? (
-          <>
-            Already have an account?{" "}
-            <Link
-              href={`/sign-in${nextQuery(searchParams.get("next"))}`}
-              className="font-semibold text-saffron-dark hover:underline"
-            >
-              Sign in
-            </Link>
-          </>
-        ) : (
-          <>
-            New here?{" "}
-            <Link
-              href={`/sign-up${nextQuery(searchParams.get("next"))}`}
-              className="font-semibold text-saffron-dark hover:underline"
-            >
-              Create an account
-            </Link>
-          </>
-        )}
-      </p>
     </div>
   );
-}
-
-function nextQuery(raw: string | null): string {
-  if (!raw) return "";
-  return `?next=${encodeURIComponent(raw)}`;
 }

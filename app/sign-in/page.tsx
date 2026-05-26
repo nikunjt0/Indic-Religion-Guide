@@ -21,11 +21,12 @@ export default function SignInPage() {
           />
         </span>
         <h1 className="font-display text-3xl font-semibold text-maroon">
-          Sign in
+          Admin sign in
         </h1>
         <p className="text-sm leading-relaxed text-foreground/75">
-          Signing in lets us personalize ritual variants to your sect, region,
-          and level.
+          This sign-in is restricted to admins. To use the Guru, text{" "}
+          <strong>GURU</strong> to the bridge number from your iPhone and
+          follow the prompts.
         </p>
         <Suspense fallback={null}>
           <SignInForm mode="signin" />

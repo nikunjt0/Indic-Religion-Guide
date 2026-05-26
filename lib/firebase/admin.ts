@@ -45,5 +45,12 @@ function lazy<T extends object>(get: () => T): T {
   });
 }
 
-export const adminDb: Firestore = lazy(() => getFirestore(getApp()));
+export const adminDb: Firestore = lazy(() => {
+  const db = getFirestore(getApp());
+  // Match the client SDK's tolerance for undefined fields. Without this, any
+  // assistant message that lacks `sources`/`citations` (e.g. SMS bridge turns
+  // that don't persist source quotes) gets rejected at write time.
+  db.settings({ ignoreUndefinedProperties: true });
+  return db;
+});
 export const adminAuth: Auth = lazy(() => getAuth(getApp()));

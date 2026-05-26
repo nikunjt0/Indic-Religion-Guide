@@ -13,7 +13,6 @@ import type {
   ExperienceLevel,
   ProfileCity,
   Sect,
-  Tradition,
   UserProfile,
 } from "@/lib/types/firestore";
 
@@ -23,19 +22,6 @@ const SECTS: { value: Sect; label: string }[] = [
   { value: "shaiva", label: "Shaiva" },
   { value: "shakta", label: "Shakta" },
 ];
-
-const TRADITIONS: { value: Tradition; label: string }[] = [
-  { value: "hindu", label: "Hindu" },
-  { value: "jain", label: "Jain" },
-];
-
-function seedTraditions(initial: UserProfile | null): Tradition[] {
-  if (initial?.traditions && initial.traditions.length > 0) {
-    return initial.traditions;
-  }
-  if (initial?.traditionPreference) return [initial.traditionPreference];
-  return [];
-}
 
 const LEVELS: { value: ExperienceLevel; label: string }[] = [
   { value: "beginner", label: "Beginner" },
@@ -81,7 +67,6 @@ export default function ProfileForm({ uid, email, initial }: Props) {
   const [state, setState] = useState({
     displayName: initial?.displayName ?? "",
     lastName: initial?.lastName ?? "",
-    traditions: seedTraditions(initial),
     cities: seedCities(initial),
     languages: seedLanguages(initial),
     sect: (initial?.sect ?? "") as Sect | "",
@@ -94,10 +79,6 @@ export default function ProfileForm({ uid, email, initial }: Props) {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (state.traditions.length === 0) {
-      setMessage("Please select at least one tradition (Hindu, Jain, or both).");
-      return;
-    }
     setSaving(true);
     setMessage(null);
     try {
@@ -126,10 +107,8 @@ export default function ProfileForm({ uid, email, initial }: Props) {
         // older read paths (and the prompt's fallback) still get a value.
         language: state.languages[0] ?? "",
         sect: state.sect || null,
-        traditions: state.traditions,
-        // Mirror the primary tradition into the legacy single field for older
-        // reads (e.g. matchGuides currently uses traditionPreference).
-        traditionPreference: state.traditions[0],
+        traditions: ["hindu"],
+        traditionPreference: "hindu",
         experienceLevel: state.experienceLevel,
         deityPreference: state.deityPreference
           ? state.deityPreference
@@ -152,51 +131,8 @@ export default function ProfileForm({ uid, email, initial }: Props) {
     }
   }
 
-  function toggleTradition(t: Tradition) {
-    setState((s) => {
-      const has = s.traditions.includes(t);
-      const next = has
-        ? s.traditions.filter((x) => x !== t)
-        : [...s.traditions, t];
-      return { ...s, traditions: next };
-    });
-  }
-
   return (
     <form onSubmit={save} className="flex flex-col gap-5">
-      <div className="flex flex-col gap-2 rounded-xl border border-saffron/40 bg-saffron-soft/40 p-4">
-        <span className="text-sm font-semibold text-foreground/90">
-          Which tradition(s) do you follow?
-        </span>
-        <p className="text-xs text-foreground/70">
-          We&apos;ll cite primarily from the texts of the tradition(s) you pick.
-          If you&apos;re Hindu, we&apos;ll draw on the Vedas, Upanishads, Smritis,
-          and Gita. If you&apos;re Jain, we&apos;ll draw on the Agamas, Tattvartha
-          Sutra, and works of Kundakunda. Pick both if you want answers from
-          both. Cross-tradition questions (e.g. &ldquo;Jain vs Hindu view of X&rdquo;)
-          will pull from both regardless.
-        </p>
-        <div className="flex flex-wrap gap-2 pt-1">
-          {TRADITIONS.map((t) => {
-            const active = state.traditions.includes(t.value);
-            return (
-              <button
-                type="button"
-                key={t.value}
-                onClick={() => toggleTradition(t.value)}
-                className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${
-                  active
-                    ? "border-saffron bg-saffron text-white shadow-sm"
-                    : "border-border-strong bg-surface text-foreground/80 hover:bg-saffron-soft"
-                }`}
-                aria-pressed={active}
-              >
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
       <Field label="Display name">
         <input
           className={fieldClass}
@@ -229,24 +165,22 @@ export default function ProfileForm({ uid, email, initial }: Props) {
           onChange={(languages) => setState({ ...state, languages })}
         />
       </div>
-      {state.traditions.includes("hindu") ? (
-        <Field label="Sect (leave blank if unsure)">
-          <select
-            className={fieldClass}
-            value={state.sect}
-            onChange={(e) =>
-              setState({ ...state, sect: e.target.value as Sect | "" })
-            }
-          >
-            <option value="">— unspecified —</option>
-            {SECTS.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-      ) : null}
+      <Field label="Sect (leave blank if unsure)">
+        <select
+          className={fieldClass}
+          value={state.sect}
+          onChange={(e) =>
+            setState({ ...state, sect: e.target.value as Sect | "" })
+          }
+        >
+          <option value="">— unspecified —</option>
+          {SECTS.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </Field>
       <Field label="Experience level">
         <select
           className={fieldClass}
@@ -282,8 +216,7 @@ export default function ProfileForm({ uid, email, initial }: Props) {
         <span className="text-xs text-foreground/65">
           Free-form instructions for the guru. For example: &ldquo;ignore the
           Vedas and classical texts, focus only on the Upanishads and Gita,&rdquo;
-          or &ldquo;skip Sanskrit, English only,&rdquo; or &ldquo;I follow
-          Shvetambara Murtipujak&mdash;answer accordingly.&rdquo;
+          or &ldquo;skip Sanskrit, English only.&rdquo;
         </span>
         <textarea
           className={`${fieldClass} min-h-[5.5rem] resize-y`}

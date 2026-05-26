@@ -1,4 +1,4 @@
-export type Tradition = "hindu" | "buddhist" | "jain";
+export type Tradition = "hindu";
 export type Sect = "shaiva" | "vaishnava" | "smarta" | "shakta";
 export type ExperienceLevel = "beginner" | "intermediate" | "advanced";
 export type Setting = "home" | "temple";

@@ -9,7 +9,10 @@ import {
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import CitationCard from "@/components/CitationCard";
+import PracticeSection from "@/components/PracticeSection";
+import SourceSection from "@/components/SourceSection";
 import { getClientDb } from "@/lib/firebase/client";
+import { parseSections } from "@/lib/rag/parseSections";
 import type {
   ChatDoc,
   ChatMessage,
@@ -380,46 +383,6 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   );
 }
 
-interface ParsedSections {
-  bySourceIndex: Record<number, string>;
-  practice: string | null;
-}
-
-// Split streamed model output into ### SOURCE <N> and ### PRACTICE sections.
-// Re-run on every token update; the last section is still growing mid-stream.
-function parseSections(text: string): ParsedSections {
-  const re = /###\s+(SOURCE\s+(\d+)|PRACTICE)\b[^\n]*\n?/gi;
-  const marks: {
-    start: number;
-    end: number;
-    kind: "source" | "practice";
-    sourceIdx?: number;
-  }[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const isSource = /^SOURCE/i.test(m[1]);
-    marks.push({
-      start: m.index,
-      end: m.index + m[0].length,
-      kind: isSource ? "source" : "practice",
-      sourceIdx: isSource ? Number(m[2]) : undefined,
-    });
-  }
-  const bySourceIndex: Record<number, string> = {};
-  let practice: string | null = null;
-  for (let i = 0; i < marks.length; i++) {
-    const cur = marks[i];
-    const nextStart = marks[i + 1]?.start ?? text.length;
-    const body = text.slice(cur.end, nextStart).trim();
-    if (cur.kind === "source" && cur.sourceIdx != null) {
-      bySourceIndex[cur.sourceIdx] = body;
-    } else if (cur.kind === "practice") {
-      practice = body;
-    }
-  }
-  return { bySourceIndex, practice };
-}
-
 function AssistantBubble({
   content,
   sources,
@@ -501,101 +464,6 @@ function AssistantBubble({
         </div>
       ) : null}
     </div>
-  );
-}
-
-function SourceSection({
-  source,
-  summary,
-  streaming,
-}: {
-  source: SourceGroup;
-  summary: string;
-  streaming?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const trimmed = summary.trim();
-  const isNotRelevant = trimmed.toUpperCase() === "NOT_RELEVANT";
-  const waitingForSummary = streaming && !trimmed;
-
-  return (
-    <article className="overflow-hidden rounded-2xl border border-border-warm bg-surface shadow-sm">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left transition hover:bg-saffron-soft/30"
-      >
-        <div className="flex items-baseline gap-2">
-          <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-saffron-dark">
-            Source
-          </span>
-          <span className="font-display text-base font-semibold text-maroon">
-            {source.source_title}
-          </span>
-          <span className="text-[11px] text-muted">
-            {source.quotes.length} {source.quotes.length === 1 ? "quote" : "quotes"}
-          </span>
-        </div>
-        <span
-          className={`text-saffron-dark transition ${open ? "rotate-90" : ""}`}
-          aria-hidden
-        >
-          ▸
-        </span>
-      </button>
-
-      {open ? (
-        <div className="flex flex-col gap-2 border-t border-border-warm bg-saffron-soft/20 px-5 py-4">
-          {source.quotes.map((q) => (
-            <CitationCard key={q.id} chunk={q} />
-          ))}
-        </div>
-      ) : null}
-
-      <div className="border-t border-border-warm px-5 py-4 text-sm leading-relaxed">
-        {isNotRelevant ? (
-          <p className="text-muted italic">
-            This source does not directly address the question.
-          </p>
-        ) : trimmed ? (
-          <p className="whitespace-pre-wrap text-foreground/90">
-            {trimmed}
-            {streaming ? (
-              <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-saffron/70" />
-            ) : null}
-          </p>
-        ) : waitingForSummary ? (
-          <p className="flex items-center gap-2 text-muted">
-            <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-saffron" />
-            Reading…
-          </p>
-        ) : (
-          <p className="text-muted italic">No summary generated.</p>
-        )}
-      </div>
-    </article>
-  );
-}
-
-function PracticeSection({
-  content,
-  streaming,
-}: {
-  content: string;
-  streaming?: boolean;
-}) {
-  return (
-    <section className="rounded-2xl border border-gold/50 bg-saffron-soft/40 px-5 py-4">
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-saffron-dark">
-        In practice
-      </h3>
-      <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-        {content}
-        {streaming ? (
-          <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-saffron/70" />
-        ) : null}
-      </p>
-    </section>
   );
 }
 

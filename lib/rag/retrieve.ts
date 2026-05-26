@@ -5,7 +5,6 @@ import type {
   ChunkDoc,
   RitualGuide,
   SourceDoc,
-  Tradition,
   UserProfile,
 } from "../types/firestore";
 
@@ -17,103 +16,25 @@ export async function embedQuery(text: string): Promise<number[]> {
   return res.data[0].embedding as number[];
 }
 
-// All traditions currently represented in the chunks collection. When a user
-// has selected this whole set (or nothing), filtering is a no-op.
-const ALL_TRADITIONS: Tradition[] = ["hindu", "jain"];
-
-// Pull the user's effective tradition list out of a profile, falling back to
-// the legacy single-tradition field. Returns the universe ALL_TRADITIONS when
-// nothing is set so callers don't have to special-case undefined.
-export function effectiveTraditions(
-  profile: Partial<UserProfile> | null | undefined,
-): Tradition[] {
-  if (profile?.traditions && profile.traditions.length > 0) {
-    return profile.traditions;
-  }
-  if (profile?.traditionPreference) return [profile.traditionPreference];
-  return ALL_TRADITIONS;
-}
-
-const COMPARE_REGEX = /\b(vs\.?|versus|compared?(\s+(to|with))?|differ(ence|s|ent)?|contrast|both\s+(traditions?|hindu|jain))\b/i;
-const HINDU_MENTION_REGEX = /\b(hindu(ism)?|vedic|vedas?|upanishads?|puranas?|smriti|gita|bhagavad|shaiv(a|ism)|vaishnav(a|ism)|smarta|shakta|brahmin|krishna|rama\b|vishnu|shiva|devi|durga|ganesha|lakshmi|saraswati|ayurved(a|ic)|doshas?|vata|pitta|kapha|tridoshas?|panchakarma|rasayana|abhyanga|shirodhara|charaka|sushruta|vagbhata)\b/i;
-const JAIN_MENTION_REGEX = /\b(jain(ism|a)?|tirthankar(a)?s?|digambara|sh?vetambara|kundakunda|tattvartha|samayasara|pravachanasara|jina|mahavira|parshv?anatha?|agamas?(?!\s*sutra))\b/i;
-
-// Returns true when the question references a tradition the user hasn't
-// selected, or explicitly compares traditions. Caller broadens retrieval to
-// all traditions in that case so cross-tradition questions still work.
-export function isCrossTraditionQuestion(
-  question: string,
-  userTraditions: Tradition[],
-): boolean {
-  if (COMPARE_REGEX.test(question)) return true;
-  if (!userTraditions.includes("jain") && JAIN_MENTION_REGEX.test(question)) {
-    return true;
-  }
-  if (!userTraditions.includes("hindu") && HINDU_MENTION_REGEX.test(question)) {
-    return true;
-  }
-  return false;
-}
-
-// Resolve which traditions retrieval should consider given the user's profile
-// and the question. Cross-tradition questions broaden to ALL_TRADITIONS.
-export function resolveRetrievalTraditions(
-  profile: Partial<UserProfile> | null | undefined,
-  question: string,
-): Tradition[] {
-  const user = effectiveTraditions(profile);
-  if (isCrossTraditionQuestion(question, user)) return ALL_TRADITIONS;
-  return user;
-}
-
+// The corpus is Hindu-only. Retrieval always filters to this single tradition.
 export async function findNearestChunks(
   queryVector: number[],
   k = 8,
-  allowedTraditions?: Tradition[],
 ): Promise<(ChunkDoc & { source_title: string })[]> {
-  const traditions = allowedTraditions ?? ALL_TRADITIONS;
-  // Only apply a server-side prefilter when narrowing to a single tradition —
-  // that's the only case that needs a composite vector index. When the set is
-  // {hindu, jain} (i.e. all known traditions), skip the filter entirely.
-  const isFiltered =
-    traditions.length === 1 && ALL_TRADITIONS.includes(traditions[0]);
-  const baseCollection = adminDb.collection("chunks");
+  const snap = await adminDb
+    .collection("chunks")
+    .where("tradition", "==", "hindu")
+    .findNearest({
+      vectorField: "embedding",
+      queryVector: FieldValue.vector(queryVector),
+      limit: k,
+      distanceMeasure: "COSINE",
+      distanceResultField: "_distance",
+    })
+    .get();
 
-  // Ayurveda is the indigenous medical system of the subcontinent and was
-  // shared across Hindu and Jain communities historically; we tag it
-  // tradition="hindu" in the corpus, but it should retrieve for non-Hindu
-  // users too. When narrowing to a single non-Hindu tradition, run a parallel
-  // ayurveda-only query and merge by distance so healing/remedy questions
-  // surface ayurvedic sources alongside the user's own tradition.
-  const queryRefs: FirebaseFirestore.Query[] = [];
-  if (isFiltered) {
-    queryRefs.push(baseCollection.where("tradition", "==", traditions[0]));
-    if (traditions[0] !== "hindu") {
-      queryRefs.push(baseCollection.where("text_type", "==", "ayurveda"));
-    }
-  } else {
-    queryRefs.push(baseCollection);
-  }
-
-  const snaps = await Promise.all(
-    queryRefs.map((q) =>
-      q
-        .findNearest({
-          vectorField: "embedding",
-          queryVector: FieldValue.vector(queryVector),
-          limit: k,
-          distanceMeasure: "COSINE",
-          distanceResultField: "_distance",
-        })
-        .get(),
-    ),
-  );
-
-  // Merge across queries by distance, dedupe by id, take top K. Distances are
-  // comparable across the parallel queries because both use the same metric
-  // and query vector.
-  const all = snaps.flatMap((s) =>
-    s.docs.map((d) => d.data() as ChunkDoc & { _distance: number }),
+  const all = snap.docs.map(
+    (d) => d.data() as ChunkDoc & { _distance: number },
   );
   all.sort((a, b) => a._distance - b._distance);
   const seen = new Set<string>();
@@ -178,7 +99,7 @@ export async function matchGuides(
   const tags = Array.from(tagSet).slice(0, 10);
   const snap = await adminDb
     .collection("ritualGuides")
-    .where("tradition", "==", profile?.traditionPreference ?? "hindu")
+    .where("tradition", "==", "hindu")
     .where("tags", "array-contains-any", tags)
     .limit(limit * 3)
     .get();

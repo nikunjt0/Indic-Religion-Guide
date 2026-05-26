@@ -1,5 +1,4 @@
 import Image from "next/image";
-import Link from "next/link";
 
 export default function Home() {
   return (
@@ -29,17 +28,18 @@ export default function Home() {
             Practice, grounded in the texts.
           </h1>
           <p className="mx-auto max-w-2xl text-base leading-relaxed text-foreground/80 sm:text-lg">
-            An Indic religion guide that answers ritual-practice questions by
-            citing the exact texts our traditions are built on.
+            A Hindu practice guide that answers ritual questions by citing the
+            exact texts the tradition is built on. Delivered over iMessage.
           </p>
         </div>
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <Link
-            href="/ask"
-            className="rounded-full bg-saffron px-7 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-saffron-dark"
-          >
-            Ask a question
-          </Link>
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-sm text-foreground/80">
+            Text <strong className="font-semibold text-maroon">GURU</strong> to
+            the bridge number to begin.
+          </p>
+          <p className="text-xs text-muted">
+            You&rsquo;ll be asked a few questions, then you can ask anything.
+          </p>
         </div>
       </section>
     </main>

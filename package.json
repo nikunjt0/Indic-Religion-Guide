@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "ingest": "tsx --env-file=.env scripts/ingest.ts",
-    "seed:guides": "tsx --env-file=.env scripts/seed-guides.ts"
+    "seed:guides": "tsx --env-file=.env scripts/seed-guides.ts",
+    "cleanup:jain": "tsx --env-file=.env scripts/cleanup-jain.ts",
+    "bridge": "npm --prefix bridge run start"
   },
   "dependencies": {
     "@types/leaflet": "^1.9.21",
