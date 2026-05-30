@@ -176,6 +176,10 @@ export interface ChatMessage {
   // Legacy (pre-source-first-rework) flat citation list.
   citations?: ChunkCitation[];
   matchedGuides?: MatchedGuideRef[];
+  // Short human-readable summary of any media the user attached to this turn
+  // (e.g. "1 photo", "6 keyframes from puja.mp4"). The actual image bytes are
+  // not persisted to Firestore — only this badge label.
+  mediaSummary?: string;
   timestamp: number;
 }
 

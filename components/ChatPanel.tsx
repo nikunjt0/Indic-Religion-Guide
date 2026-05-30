@@ -12,6 +12,10 @@ import CitationCard from "@/components/CitationCard";
 import PracticeSection from "@/components/PracticeSection";
 import SourceSection from "@/components/SourceSection";
 import { getClientDb } from "@/lib/firebase/client";
+import {
+  processFile,
+  type ChatAttachment,
+} from "@/lib/mediaAttachments";
 import { parseSections } from "@/lib/rag/parseSections";
 import type {
   ChatDoc,
@@ -61,7 +65,10 @@ export default function ChatPanel({ uid, initialChat }: Props) {
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [processingFiles, setProcessingFiles] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -110,6 +117,7 @@ export default function ChatPanel({ uid, initialChat }: Props) {
     question: string,
     convoMessages: ChatMessage[],
     effectiveClarifications: Record<string, string>,
+    turnAttachments: ChatAttachment[] = [],
   ) {
     setLoading(true);
     setError(null);
@@ -123,6 +131,15 @@ export default function ChatPanel({ uid, initialChat }: Props) {
       .slice(0, -1)
       .map((m) => ({ role: m.role, content: m.content }));
 
+    // Strip display-only metadata before shipping — the server only needs
+    // kind / dataUrl / frame indices.
+    const wireAttachments = turnAttachments.map((a) => ({
+      kind: a.kind,
+      dataUrl: a.dataUrl,
+      frameIndex: a.frameIndex,
+      frameTotal: a.frameTotal,
+    }));
+
     try {
       const res = await fetch("/api/ask", {
         method: "POST",
@@ -132,6 +149,7 @@ export default function ChatPanel({ uid, initialChat }: Props) {
           question,
           clarifications: effectiveClarifications,
           history: priorTurns,
+          attachments: wireAttachments.length > 0 ? wireAttachments : undefined,
         }),
       });
 
@@ -211,24 +229,60 @@ export default function ChatPanel({ uid, initialChat }: Props) {
   async function sendQuestion(question: string) {
     const trimmed = question.trim();
     if (!trimmed) return;
+    if (processingFiles) return;
 
+    const turnAttachments = attachments;
     const userMsg: ChatMessage = {
       role: "user",
       content: trimmed,
+      mediaSummary: summarizeAttachments(turnAttachments),
       timestamp: Date.now(),
     };
     const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
     setInput("");
+    setAttachments([]);
     setPendingQuestion(trimmed);
-    await runAsk(trimmed, nextMessages, clarifications);
+    await runAsk(trimmed, nextMessages, clarifications, turnAttachments);
   }
 
   async function resolveClarification(key: string) {
     if (!clarify?.field || !pendingQuestion) return;
     const next = { ...clarifications, [clarify.field]: key };
     setClarifications(next);
-    await runAsk(pendingQuestion, messages, next);
+    // Clarification rerun replays the same question; original media context
+    // is no longer in state (cleared on first send) so we re-ask text-only.
+    await runAsk(pendingQuestion, messages, next, []);
+  }
+
+  async function onFilesPicked(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setProcessingFiles(true);
+    setError(null);
+    try {
+      const added: ChatAttachment[] = [];
+      for (const file of Array.from(files)) {
+        const parts = await processFile(file);
+        added.push(...parts);
+      }
+      setAttachments((prev) => {
+        const merged = [...prev, ...added];
+        if (merged.length > 12) {
+          setError("Attachment limit is 12 images. Some were dropped.");
+          return merged.slice(0, 12);
+        }
+        return merged;
+      });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setProcessingFiles(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  function removeAttachment(index: number) {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
   }
 
   const composer = (
@@ -256,10 +310,65 @@ export default function ChatPanel({ uid, initialChat }: Props) {
         }
         disabled={loading}
       />
-      <div className="flex items-center justify-end gap-2">
+
+      {attachments.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {attachments.map((a, i) => (
+            <div
+              key={i}
+              className="group relative h-16 w-16 overflow-hidden rounded-lg border border-border-warm bg-surface"
+              title={
+                a.kind === "video-frame"
+                  ? `${a.sourceName} — frame ${a.frameIndex}/${a.frameTotal}`
+                  : a.sourceName
+              }
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={a.dataUrl}
+                alt={a.sourceName}
+                className="h-full w-full object-cover"
+              />
+              {a.kind === "video-frame" ? (
+                <span className="absolute bottom-0 left-0 right-0 bg-black/55 px-1 py-0.5 text-center text-[9px] font-medium text-white">
+                  {a.frameIndex}/{a.frameTotal}
+                </span>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => removeAttachment(i)}
+                className="absolute right-0.5 top-0.5 grid h-5 w-5 place-items-center rounded-full bg-black/60 text-xs text-white opacity-0 transition group-hover:opacity-100"
+                aria-label="Remove attachment"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*"
+            multiple
+            className="hidden"
+            onChange={(e) => onFilesPicked(e.target.files)}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading || processingFiles}
+            className="rounded-full border border-border-warm bg-surface px-3 py-1.5 text-xs font-medium text-saffron-dark transition hover:border-saffron hover:bg-saffron-soft disabled:opacity-50"
+          >
+            {processingFiles ? "Preparing…" : "📎 Attach photo or video"}
+          </button>
+        </div>
         <button
           type="submit"
-          disabled={loading || !input.trim()}
+          disabled={loading || processingFiles || !input.trim()}
           className="rounded-full bg-saffron px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-saffron-dark disabled:opacity-50"
         >
           {loading ? "Thinking…" : "Send"}
@@ -355,10 +464,15 @@ export default function ChatPanel({ uid, initialChat }: Props) {
 function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-1">
         <div className="max-w-[85%] rounded-2xl rounded-br-md bg-saffron px-4 py-3 text-sm leading-relaxed text-white shadow-sm">
           {message.content}
         </div>
+        {message.mediaSummary ? (
+          <span className="rounded-full border border-border-warm bg-surface/80 px-2.5 py-0.5 text-[11px] font-medium text-saffron-dark">
+            📎 {message.mediaSummary}
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -519,4 +633,21 @@ function LegacyAssistantBubble({
       ) : null}
     </div>
   );
+}
+
+function summarizeAttachments(attachments: ChatAttachment[]): string | undefined {
+  if (attachments.length === 0) return undefined;
+  const photos = attachments.filter((a) => a.kind === "image");
+  const frames = attachments.filter((a) => a.kind === "video-frame");
+  const parts: string[] = [];
+  if (photos.length > 0) {
+    parts.push(`${photos.length} photo${photos.length === 1 ? "" : "s"}`);
+  }
+  if (frames.length > 0) {
+    // Distinct source names (a user could attach multiple videos in one turn).
+    const videos = Array.from(new Set(frames.map((f) => f.sourceName)));
+    const label = videos.length === 1 ? videos[0] : `${videos.length} videos`;
+    parts.push(`${frames.length} keyframes from ${label}`);
+  }
+  return parts.join(", ");
 }

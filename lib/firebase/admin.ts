@@ -50,7 +50,21 @@ export const adminDb: Firestore = lazy(() => {
   // Match the client SDK's tolerance for undefined fields. Without this, any
   // assistant message that lacks `sources`/`citations` (e.g. SMS bridge turns
   // that don't persist source quotes) gets rejected at write time.
-  db.settings({ ignoreUndefinedProperties: true });
+  //
+  // The lazy wrapper caches per-module, but tsx (and Next's dev pipeline)
+  // can evaluate this file under two distinct specifiers — e.g. the bridge
+  // imports `../../lib/firebase/admin.ts` while lib code imports
+  // `../firebase/admin`. That produces two `lazy()` closures pointing at the
+  // same underlying Firestore singleton, so the second one's `settings()`
+  // call hits "already initialized". The first call already applied the
+  // setting; swallow the duplicate and proceed.
+  try {
+    db.settings({ ignoreUndefinedProperties: true });
+  } catch (err) {
+    if (!/already (been )?initialized|settings\(\) once/i.test(String(err))) {
+      throw err;
+    }
+  }
   return db;
 });
 export const adminAuth: Auth = lazy(() => getAuth(getApp()));

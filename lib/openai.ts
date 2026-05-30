@@ -19,3 +19,7 @@ export const openai = new Proxy({} as OpenAI, {
 export const EMBED_MODEL = "text-embedding-3-small";
 export const EMBED_DIMS = 1536;
 export const CHAT_MODEL = "gpt-4o-mini";
+// Vision-capable model. Used only when the user's turn includes image
+// attachments (or video frames extracted client-side) — gpt-4o-mini is
+// text-only, so we cannot ship image content blocks to it.
+export const VISION_CHAT_MODEL = "gpt-4o";

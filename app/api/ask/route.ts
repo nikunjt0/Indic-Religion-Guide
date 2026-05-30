@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { adminDb } from "@/lib/firebase/admin";
-import { CHAT_MODEL, openai } from "@/lib/openai";
+import { CHAT_MODEL, VISION_CHAT_MODEL, openai } from "@/lib/openai";
 import { decideClarification } from "@/lib/rag/clarify";
 import { logQuery } from "@/lib/rag/log";
 import {
@@ -27,16 +27,56 @@ const HistoryMessageSchema = z.object({
   content: z.string().max(20_000),
 });
 
+// Client-prepared media. Photos are downscaled in the browser; videos are
+// reduced to a handful of JPEG keyframes. Either way, what arrives here is a
+// list of image data URLs the vision model can ingest directly.
+const AttachmentSchema = z.object({
+  // Tag so the prompt can hint to the model whether a frame came from a video.
+  kind: z.enum(["image", "video-frame"]),
+  // data:image/<jpeg|png|webp|gif>;base64,...
+  dataUrl: z
+    .string()
+    .startsWith("data:image/")
+    .max(8_000_000),
+  // Optional position info for video frames (1-indexed within their source).
+  frameIndex: z.number().int().min(1).optional(),
+  frameTotal: z.number().int().min(1).optional(),
+});
+
+const MAX_ATTACHMENTS = 12;
+
 const BodySchema = z.object({
   userId: z.string().min(1),
   question: z.string().min(1).max(4000),
   clarifications: z.record(z.string(), z.string()).optional(),
   history: z.array(HistoryMessageSchema).optional(),
+  attachments: z.array(AttachmentSchema).max(MAX_ATTACHMENTS).optional(),
 });
 
 function sse(data: unknown): Uint8Array {
   const payload = typeof data === "string" ? data : JSON.stringify(data);
   return new TextEncoder().encode(`data: ${payload}\n\n`);
+}
+
+// One short framing sentence that goes in front of the images. Tells the
+// model what it's looking at so it doesn't get confused when video frames
+// arrive as a sequence — they're frames sampled from one video, not separate
+// photos. Photos are noted by count for the same reason.
+function buildMediaPreamble(
+  attachments: Array<{ kind: "image" | "video-frame" }>,
+): string {
+  const photos = attachments.filter((a) => a.kind === "image").length;
+  const frames = attachments.filter((a) => a.kind === "video-frame").length;
+  const parts: string[] = [];
+  if (photos > 0) {
+    parts.push(`${photos} photo${photos === 1 ? "" : "s"}`);
+  }
+  if (frames > 0) {
+    parts.push(
+      `${frames} keyframes sampled from a video (in chronological order)`,
+    );
+  }
+  return `The user attached ${parts.join(" and ")} with their question. Use them to identify deities, symbols, ritual implements, gestures, postures, manuscript pages, temple architecture, or other visual context relevant to the question. Then answer in the required ### PRACTICE / ### SOURCE format using the retrieved sources below.`;
 }
 
 export async function POST(req: Request) {
@@ -47,6 +87,8 @@ export async function POST(req: Request) {
   }
   const { userId, question, clarifications } = parsed.data;
   const history = (parsed.data.history ?? []).slice(-MAX_HISTORY_MESSAGES);
+  const attachments = parsed.data.attachments ?? [];
+  const hasMedia = attachments.length > 0;
   const lastUserTurn = [...history].reverse().find((m) => m.role === "user");
 
   // Load profile (may not exist for fresh anonymous users).
@@ -146,13 +188,32 @@ export async function POST(req: Request) {
           : { role: "user" as const, content: m.content },
       );
 
+      // Build the current user turn. Text-only turns stay a plain string;
+      // media turns become a content-parts array: a short framing note, the
+      // images themselves, then the RAG-built user prompt.
+      const currentUserContent = hasMedia
+        ? [
+            {
+              type: "text" as const,
+              text: buildMediaPreamble(attachments),
+            },
+            ...attachments.map((a) => ({
+              type: "image_url" as const,
+              image_url: { url: a.dataUrl, detail: "auto" as const },
+            })),
+            { type: "text" as const, text: userPrompt },
+          ]
+        : userPrompt;
+
+      const modelToUse = hasMedia ? VISION_CHAT_MODEL : CHAT_MODEL;
+
       try {
         const completion = await openai.chat.completions.create({
-          model: CHAT_MODEL,
+          model: modelToUse,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
             ...priorMessages,
-            { role: "user", content: userPrompt },
+            { role: "user", content: currentUserContent },
           ],
           stream: true,
         });
@@ -183,7 +244,7 @@ export async function POST(req: Request) {
         retrievedGuideSlugs: guides.map((g) => g.slug),
         answer: fullAnswer,
         promptVersion: PROMPT_VERSION,
-        model: CHAT_MODEL,
+        model: modelToUse,
         latencyMs: Date.now() - started,
       }).catch((err) => console.error("query log failed:", err));
     },
