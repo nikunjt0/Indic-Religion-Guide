@@ -1,7 +1,9 @@
 import { config } from "./config.ts";
 import {
   connectBlueBubbles,
+  listMessageAttachments,
   sendSegments,
+  type BlueBubblesAttachment,
   type IncomingMessage,
 } from "./bluebubbles.ts";
 import {
@@ -13,11 +15,11 @@ import {
 import { handleIdFor, normalizeHandle } from "./handle.ts";
 import { loadRecentMessages, appendTurn } from "./history.ts";
 import { log } from "./logger.ts";
+import { prepareIncomingMedia, summarizeMedia } from "./media.ts";
 import {
   advance,
   getOrCreate,
   PROMPTS,
-  promptsFor,
   type IMessageUser,
 } from "./onboarding.ts";
 import { askGuru } from "./rag.ts";
@@ -34,7 +36,6 @@ async function handleInbound(raw: IncomingMessage): Promise<void> {
   const chat = raw.chats?.[0];
   if (!chat || chat.style !== STYLE_DIRECT) return;
   const text = (raw.text ?? "").trim();
-  if (!text) return;
   const handleRaw = raw.handle?.address ?? "";
   if (!handleRaw) return;
   const handle = normalizeHandle(handleRaw);
@@ -46,6 +47,7 @@ async function handleInbound(raw: IncomingMessage): Promise<void> {
   // creates a session. Everything else is dropped silently.
   const existingSnap = await imessageUsersCol().doc(handleId).get();
   if (!existingSnap.exists) {
+    if (!text) return;
     if (text.toLowerCase() !== config.triggerWord) {
       log.info(`ignoring stranger ${handle}: "${text.slice(0, 60)}"`);
       return;
@@ -86,13 +88,16 @@ async function handleInbound(raw: IncomingMessage): Promise<void> {
   }
 
   if (user.onboardingState !== "complete") {
+    if (!text) return;
     const result = await advance(user, text);
     await sendUserMessages(chatGuid, result.reply);
     return;
   }
 
   // Onboarded → RAG.
-  await respondWithGuru(user, chatGuid, text);
+  const bbAttachments = await listMessageAttachments(raw);
+  if (!text && bbAttachments.length === 0) return;
+  await respondWithGuru(user, chatGuid, text, bbAttachments);
 }
 
 async function runOnboardingFromIntro(user: IMessageUser, chatGuid: string): Promise<void> {
@@ -104,8 +109,23 @@ async function runOnboardingFromIntro(user: IMessageUser, chatGuid: string): Pro
   await sendUserMessages(chatGuid, result.next === "ask_city" ? [PROMPTS.ask_city] : result.reply);
 }
 
-async function respondWithGuru(user: IMessageUser, chatGuid: string, question: string): Promise<void> {
+async function respondWithGuru(
+  user: IMessageUser,
+  chatGuid: string,
+  question: string,
+  bbAttachments: BlueBubblesAttachment[] = [],
+): Promise<void> {
   const history = await loadRecentMessages(user.handleId);
+  const attachments =
+    bbAttachments.length > 0 ? await prepareIncomingMedia(bbAttachments) : [];
+  const mediaSummary = summarizeMedia(attachments);
+  if (!question && bbAttachments.length > 0 && attachments.length === 0) {
+    await sendUserMessages(chatGuid, [
+      "I received an attachment, but I couldn't read it. Please try sending a photo or a short video.",
+    ]);
+    return;
+  }
+
   let answer: string;
   let chunkIds: string[] = [];
   let sources: SourceGroup[] = [];
@@ -116,6 +136,7 @@ async function respondWithGuru(user: IMessageUser, chatGuid: string, question: s
       question,
       profile: user,
       history,
+      attachments,
     });
     answer = result.answer;
     chunkIds = result.matchedChunkIds;
@@ -139,7 +160,7 @@ async function respondWithGuru(user: IMessageUser, chatGuid: string, question: s
   if (sources.length > 0) {
     try {
       const share = await createShare({
-        question,
+        question: question || mediaSummary || "iMessage media",
         answer,
         sources,
         matchedGuides,
@@ -156,7 +177,10 @@ async function respondWithGuru(user: IMessageUser, chatGuid: string, question: s
   await sendUserMessages(chatGuid, segments);
   await appendTurn(
     user.handleId,
-    { content: question },
+    {
+      content: question || mediaSummary || "iMessage media",
+      mediaSummary,
+    },
     {
       content: answer,
       sources,

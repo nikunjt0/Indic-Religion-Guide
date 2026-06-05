@@ -14,4 +14,6 @@ export const config = {
   maxHistoryMessages: 8,
   maxSmsSegment: 1500,
   triggerWord: "guru",
+  ffmpegPath: process.env.FFMPEG_PATH ?? "ffmpeg",
+  ffprobePath: process.env.FFPROBE_PATH ?? "ffprobe",
 };
