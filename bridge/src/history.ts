@@ -24,7 +24,7 @@ export async function loadRecentMessages(handleId: string): Promise<ChatMessage[
 
 export async function appendTurn(
   handleId: string,
-  userTurn: { content: string },
+  userTurn: { content: string; mediaSummary?: string },
   assistantTurn: {
     content: string;
     sources?: SourceGroup[];
@@ -44,7 +44,12 @@ export async function appendTurn(
     updatedAt: now,
     messages: [
       ...(existing?.messages ?? []),
-      { role: "user", content: userTurn.content, timestamp: now },
+      {
+        role: "user",
+        content: userTurn.content,
+        mediaSummary: userTurn.mediaSummary,
+        timestamp: now,
+      },
       {
         role: "assistant",
         content: assistantTurn.content,

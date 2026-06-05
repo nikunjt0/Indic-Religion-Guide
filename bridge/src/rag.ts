@@ -1,4 +1,4 @@
-import { CHAT_MODEL, openai } from "../../lib/openai.ts";
+import { CHAT_MODEL, VISION_CHAT_MODEL, openai } from "../../lib/openai.ts";
 import { logQuery } from "../../lib/rag/log.ts";
 import {
   PROMPT_VERSION,
@@ -12,6 +12,11 @@ import {
   findNearestChunks,
   matchGuides,
 } from "../../lib/rag/retrieve.ts";
+import {
+  mediaPreamble,
+  summarizeMedia,
+  type BridgeMediaAttachment,
+} from "./media.ts";
 import type {
   ChatMessage,
   MatchedGuideRef,
@@ -32,18 +37,30 @@ export async function askGuru(args: {
   question: string;
   profile: Partial<UserProfile>;
   history: ChatMessage[];
+  attachments?: BridgeMediaAttachment[];
 }): Promise<RagResult> {
   const started = Date.now();
   const { handleId, question, profile, history } = args;
+  const attachments = args.attachments ?? [];
+  const hasImages = attachments.length > 0;
+  const effectiveQuestion =
+    question.trim() ||
+    (hasImages
+      ? "Please identify and explain the attached photo or video."
+      : question);
 
   const lastUserTurn = [...history].reverse().find((m) => m.role === "user");
-  const retrievalQuery = lastUserTurn
-    ? `${lastUserTurn.content}\n\n${question}`
-    : question;
+  const retrievalQuery = [
+    lastUserTurn?.content,
+    effectiveQuestion,
+    summarizeMedia(attachments),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   const [queryVec, guides] = await Promise.all([
     embedQuery(retrievalQuery),
-    matchGuides(question, profile),
+    matchGuides(effectiveQuestion, profile),
   ]);
   const chunks = await findNearestChunks(queryVec, 8);
   const grouped = groupChunksBySource(chunks);
@@ -80,7 +97,7 @@ export async function askGuru(args: {
   }));
 
   const userPrompt = buildUserPrompt({
-    question,
+    question: effectiveQuestion,
     profile,
     sources: grouped,
     guides,
@@ -92,12 +109,24 @@ export async function askGuru(args: {
       : { role: "user" as const, content: m.content },
   );
 
+  const currentUserContent = hasImages
+    ? [
+        { type: "text" as const, text: mediaPreamble(attachments) },
+        ...attachments.map((a) => ({
+          type: "image_url" as const,
+          image_url: { url: a.dataUrl, detail: "auto" as const },
+        })),
+        { type: "text" as const, text: userPrompt },
+      ]
+    : userPrompt;
+  const modelToUse = hasImages ? VISION_CHAT_MODEL : CHAT_MODEL;
+
   const completion = await openai.chat.completions.create({
-    model: CHAT_MODEL,
+    model: modelToUse,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       ...priorMessages,
-      { role: "user", content: userPrompt },
+      { role: "user", content: currentUserContent },
     ],
   });
 
@@ -106,12 +135,12 @@ export async function askGuru(args: {
   // Fire-and-forget — failure to log shouldn't fail the user reply.
   logQuery({
     userId: handleId,
-    question,
+    question: effectiveQuestion,
     retrievedChunkIds: chunks.map((c) => c.id),
     retrievedGuideSlugs: guides.map((g) => g.slug),
     answer,
     promptVersion: PROMPT_VERSION,
-    model: CHAT_MODEL,
+    model: modelToUse,
     latencyMs: Date.now() - started,
   }).catch((err) => console.error("query log failed:", err));
 
