@@ -45,12 +45,23 @@ const AttachmentSchema = z.object({
 
 const MAX_ATTACHMENTS = 12;
 
+// Transcribed audio/video the client extracted and sent to /api/transcribe.
+// Arrives here as plain text we weave into the prompt and retrieval query.
+const TranscriptSchema = z.object({
+  sourceName: z.string().max(300),
+  text: z.string().max(50_000),
+  truncated: z.boolean().optional(),
+});
+
+const MAX_TRANSCRIPTS = 12;
+
 const BodySchema = z.object({
   userId: z.string().min(1),
   question: z.string().min(1).max(4000),
   clarifications: z.record(z.string(), z.string()).optional(),
   history: z.array(HistoryMessageSchema).optional(),
   attachments: z.array(AttachmentSchema).max(MAX_ATTACHMENTS).optional(),
+  transcripts: z.array(TranscriptSchema).max(MAX_TRANSCRIPTS).optional(),
 });
 
 function sse(data: unknown): Uint8Array {
@@ -79,6 +90,24 @@ function buildMediaPreamble(
   return `The user attached ${parts.join(" and ")} with their question. Use them to identify deities, symbols, ritual implements, gestures, postures, manuscript pages, temple architecture, or other visual context relevant to the question. Then answer in the required ### PRACTICE / ### SOURCE format using the retrieved sources below.`;
 }
 
+// Fold transcribed audio/video into a prompt block. Spoken questions, chanted
+// mantras, and named deities in the soundtrack become text the model can act
+// on alongside any frames.
+function buildTranscriptBlock(
+  transcripts: Array<{ sourceName: string; text: string; truncated?: boolean }>,
+): string {
+  if (transcripts.length === 0) return "";
+  const items = transcripts
+    .map(
+      (t) =>
+        `Transcript of "${t.sourceName}"${
+          t.truncated ? " (partial — only the opening portion was transcribed)" : ""
+        }:\n${t.text.trim()}`,
+    )
+    .join("\n\n");
+  return `The user attached audio (or a video with sound). Below is the transcribed speech and chanting — treat it as part of the question, and use it to identify the mantra, deity, or practice being asked about:\n\n${items}`;
+}
+
 export async function POST(req: Request) {
   const started = Date.now();
   const parsed = BodySchema.safeParse(await req.json());
@@ -88,7 +117,8 @@ export async function POST(req: Request) {
   const { userId, question, clarifications } = parsed.data;
   const history = (parsed.data.history ?? []).slice(-MAX_HISTORY_MESSAGES);
   const attachments = parsed.data.attachments ?? [];
-  const hasMedia = attachments.length > 0;
+  const transcripts = parsed.data.transcripts ?? [];
+  const hasImages = attachments.length > 0;
   const lastUserTurn = [...history].reverse().find((m) => m.role === "user");
 
   // Load profile (may not exist for fresh anonymous users).
@@ -126,10 +156,20 @@ export async function POST(req: Request) {
   // Retrieve. For follow-ups, prepend the most recent prior user question to
   // the embedding input so the vector search captures the topic the user is
   // following up on (e.g., a terse "what about during Navaratri?" still pulls
-  // puja-relevant chunks because the prior turn anchored the topic).
-  const retrievalQuery = lastUserTurn
-    ? `${lastUserTurn.content}\n\n${question}`
-    : question;
+  // puja-relevant chunks because the prior turn anchored the topic). When the
+  // turn carries transcribed audio, fold a slice of it in too so spoken mantra
+  // lines or deity names steer retrieval even if the typed question is terse.
+  const transcriptForRetrieval = transcripts
+    .map((t) => t.text)
+    .join("\n")
+    .slice(0, 2000);
+  const retrievalQuery = [
+    lastUserTurn?.content,
+    question,
+    transcriptForRetrieval,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   const [queryVec, guides] = await Promise.all([
     embedQuery(retrievalQuery),
     matchGuides(question, profile),
@@ -188,24 +228,44 @@ export async function POST(req: Request) {
           : { role: "user" as const, content: m.content },
       );
 
-      // Build the current user turn. Text-only turns stay a plain string;
-      // media turns become a content-parts array: a short framing note, the
-      // images themselves, then the RAG-built user prompt.
-      const currentUserContent = hasMedia
-        ? [
-            {
-              type: "text" as const,
-              text: buildMediaPreamble(attachments),
-            },
-            ...attachments.map((a) => ({
-              type: "image_url" as const,
-              image_url: { url: a.dataUrl, detail: "auto" as const },
-            })),
-            { type: "text" as const, text: userPrompt },
-          ]
-        : userPrompt;
+      // Build the current user turn.
+      //  - Image turns become a content-parts array: a framing note (plus any
+      //    audio transcript), the images, then the RAG-built user prompt.
+      //  - Audio-only turns stay a plain string: the transcript block prepended
+      //    to the user prompt.
+      //  - Pure text turns are just the user prompt.
+      const transcriptBlock = buildTranscriptBlock(transcripts);
 
-      const modelToUse = hasMedia ? VISION_CHAT_MODEL : CHAT_MODEL;
+      let currentUserContent:
+        | string
+        | Array<
+            | { type: "text"; text: string }
+            | {
+                type: "image_url";
+                image_url: { url: string; detail: "auto" };
+              }
+          >;
+
+      if (hasImages) {
+        const framing = [buildMediaPreamble(attachments), transcriptBlock]
+          .filter(Boolean)
+          .join("\n\n");
+        currentUserContent = [
+          { type: "text", text: framing },
+          ...attachments.map((a) => ({
+            type: "image_url" as const,
+            image_url: { url: a.dataUrl, detail: "auto" as const },
+          })),
+          { type: "text", text: userPrompt },
+        ];
+      } else if (transcriptBlock) {
+        currentUserContent = `${transcriptBlock}\n\n${userPrompt}`;
+      } else {
+        currentUserContent = userPrompt;
+      }
+
+      // Only image content needs the vision model; transcripts are plain text.
+      const modelToUse = hasImages ? VISION_CHAT_MODEL : CHAT_MODEL;
 
       try {
         const completion = await openai.chat.completions.create({

@@ -164,6 +164,17 @@ export interface MatchedGuideRef {
   title: string;
 }
 
+// A persisted attachment thumbnail for a user turn. The image bytes live in
+// Cloud Storage; only the download URL is stored on the chat document, so the
+// history can re-render what the user sent without bloating Firestore.
+export interface ChatMessageMedia {
+  kind: "image" | "video-frame";
+  url: string;
+  sourceName?: string;
+  frameIndex?: number;
+  frameTotal?: number;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   // Raw model output. For assistant messages using the source-first format,
@@ -177,9 +188,15 @@ export interface ChatMessage {
   citations?: ChunkCitation[];
   matchedGuides?: MatchedGuideRef[];
   // Short human-readable summary of any media the user attached to this turn
-  // (e.g. "1 photo", "6 keyframes from puja.mp4"). The actual image bytes are
-  // not persisted to Firestore — only this badge label.
+  // (e.g. "1 photo", "6 keyframes from puja.mp4"). Always present when media
+  // was attached; the badge renders even if thumbnail upload failed.
   mediaSummary?: string;
+  // Persisted thumbnails for the user's attachments (uploaded to Cloud
+  // Storage). Present on turns generated after the media-history rework.
+  media?: ChatMessageMedia[];
+  // Transcripts of audio/video the user attached, by source file. Lets the
+  // history show what was spoken/chanted, and is sent to the model as context.
+  transcripts?: { sourceName: string; text: string }[];
   timestamp: number;
 }
 
