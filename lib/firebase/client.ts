@@ -1,6 +1,10 @@
 import { type FirebaseApp, getApps, initializeApp } from "firebase/app";
 import { type Auth, getAuth } from "firebase/auth";
-import { type Firestore, getFirestore } from "firebase/firestore";
+import {
+  type Firestore,
+  getFirestore,
+  initializeFirestore,
+} from "firebase/firestore";
 
 const config = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -21,5 +25,15 @@ export function getClientAuth(): Auth {
 }
 
 export function getClientDb(): Firestore {
-  return getFirestore(getClientApp());
+  const app = getClientApp();
+  // Match the admin SDK: tolerate `undefined` fields so optional message
+  // properties (mediaSummary, media, transcripts, sources, …) can be omitted
+  // without the Web SDK rejecting the whole write. initializeFirestore must
+  // run before the first getFirestore(app); fall back if it already did (e.g.
+  // Fast Refresh re-running this module against a live instance).
+  try {
+    return initializeFirestore(app, { ignoreUndefinedProperties: true });
+  } catch {
+    return getFirestore(app);
+  }
 }

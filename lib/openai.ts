@@ -21,5 +21,11 @@ export const EMBED_DIMS = 1536;
 export const CHAT_MODEL = "gpt-4o-mini";
 // Vision-capable model. Used only when the user's turn includes image
 // attachments (or video frames extracted client-side) — gpt-4o-mini is
-// text-only, so we cannot ship image content blocks to it.
-export const VISION_CHAT_MODEL = "gpt-4o";
+// text-only, so we cannot ship image content blocks to it. gpt-4.1 is the
+// current-generation successor to gpt-4o: stronger visual reasoning, a larger
+// context window for the keyframe sequences a video expands into, and cheaper.
+export const VISION_CHAT_MODEL = "gpt-4.1";
+// Speech-to-text model for audio attachments and the audio track lifted out
+// of videos. gpt-4o-transcribe supersedes whisper-1 with better accuracy on
+// accented English, Sanskrit terms, and noisy ritual recordings.
+export const TRANSCRIBE_MODEL = "gpt-4o-transcribe";

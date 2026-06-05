@@ -12,14 +12,19 @@ import CitationCard from "@/components/CitationCard";
 import PracticeSection from "@/components/PracticeSection";
 import SourceSection from "@/components/SourceSection";
 import { getClientDb } from "@/lib/firebase/client";
+import { uploadAttachments } from "@/lib/firebase/storage";
 import {
   processFile,
+  transcribeAudio,
   type ChatAttachment,
+  type ExtractedAudio,
+  type Transcript,
 } from "@/lib/mediaAttachments";
 import { parseSections } from "@/lib/rag/parseSections";
 import type {
   ChatDoc,
   ChatMessage,
+  ChatMessageMedia,
   ChunkCitation,
   MatchedGuideRef,
   SourceGroup,
@@ -66,7 +71,9 @@ export default function ChatPanel({ uid, initialChat }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [processingFiles, setProcessingFiles] = useState(false);
+  const [processingLabel, setProcessingLabel] = useState("Preparing…");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -118,6 +125,8 @@ export default function ChatPanel({ uid, initialChat }: Props) {
     convoMessages: ChatMessage[],
     effectiveClarifications: Record<string, string>,
     turnAttachments: ChatAttachment[] = [],
+    turnTranscripts: Transcript[] = [],
+    uploadPromise?: Promise<ChatMessageMedia[]>,
   ) {
     setLoading(true);
     setError(null);
@@ -150,6 +159,14 @@ export default function ChatPanel({ uid, initialChat }: Props) {
           clarifications: effectiveClarifications,
           history: priorTurns,
           attachments: wireAttachments.length > 0 ? wireAttachments : undefined,
+          transcripts:
+            turnTranscripts.length > 0
+              ? turnTranscripts.map((t) => ({
+                  sourceName: t.sourceName,
+                  text: t.text,
+                  truncated: t.truncated,
+                }))
+              : undefined,
         }),
       });
 
@@ -212,6 +229,22 @@ export default function ChatPanel({ uid, initialChat }: Props) {
           matchedGuides: guides,
           timestamp: Date.now(),
         };
+
+        // Swap the optimistic data-URL previews on the user turn for the
+        // persisted Storage URLs before writing — Firestore must never hold
+        // the multi-MB data URLs. The user turn is the last of convoMessages.
+        const userTurn = convoMessages[convoMessages.length - 1];
+        if (uploadPromise && userTurn?.role === "user") {
+          try {
+            const media = await uploadPromise;
+            userTurn.media = media.length > 0 ? media : undefined;
+          } catch {
+            // Upload failed: drop the previews rather than persist data URLs.
+            // The mediaSummary badge still records what was attached.
+            userTurn.media = undefined;
+          }
+        }
+
         const finalMessages = [...convoMessages, assistantMsg];
         setMessages(finalMessages);
         setStreaming(null);
@@ -232,18 +265,54 @@ export default function ChatPanel({ uid, initialChat }: Props) {
     if (processingFiles) return;
 
     const turnAttachments = attachments;
+    const turnTranscripts = transcripts;
+
+    // Optimistic previews: show the in-memory data URLs immediately. runAsk
+    // swaps these for the persisted Storage URLs before writing to Firestore.
+    const previewMedia: ChatMessageMedia[] = turnAttachments.map((a) => ({
+      kind: a.kind,
+      url: a.dataUrl,
+      sourceName: a.sourceName,
+      frameIndex: a.frameIndex,
+      frameTotal: a.frameTotal,
+    }));
+
     const userMsg: ChatMessage = {
       role: "user",
       content: trimmed,
-      mediaSummary: summarizeAttachments(turnAttachments),
+      mediaSummary: summarizeMedia(turnAttachments, turnTranscripts),
+      media: previewMedia.length > 0 ? previewMedia : undefined,
+      transcripts:
+        turnTranscripts.length > 0
+          ? turnTranscripts.map((t) => ({
+              sourceName: t.sourceName,
+              text: t.text,
+            }))
+          : undefined,
       timestamp: Date.now(),
     };
     const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
     setInput("");
     setAttachments([]);
+    setTranscripts([]);
     setPendingQuestion(trimmed);
-    await runAsk(trimmed, nextMessages, clarifications, turnAttachments);
+
+    // Upload thumbnails to Storage concurrently with the model call; runAsk
+    // awaits this just before it persists the turn.
+    const uploadPromise =
+      turnAttachments.length > 0
+        ? uploadAttachments(uid, crypto.randomUUID(), turnAttachments)
+        : undefined;
+
+    await runAsk(
+      trimmed,
+      nextMessages,
+      clarifications,
+      turnAttachments,
+      turnTranscripts,
+      uploadPromise,
+    );
   }
 
   async function resolveClarification(key: string) {
@@ -258,31 +327,61 @@ export default function ChatPanel({ uid, initialChat }: Props) {
   async function onFilesPicked(files: FileList | null) {
     if (!files || files.length === 0) return;
     setProcessingFiles(true);
+    setProcessingLabel("Preparing…");
     setError(null);
     try {
-      const added: ChatAttachment[] = [];
+      const addedAttachments: ChatAttachment[] = [];
+      const audios: ExtractedAudio[] = [];
       for (const file of Array.from(files)) {
-        const parts = await processFile(file);
-        added.push(...parts);
+        const processed = await processFile(file);
+        addedAttachments.push(...processed.attachments);
+        if (processed.audio) audios.push(processed.audio);
       }
-      setAttachments((prev) => {
-        const merged = [...prev, ...added];
-        if (merged.length > 12) {
-          setError("Attachment limit is 12 images. Some were dropped.");
-          return merged.slice(0, 12);
+
+      if (addedAttachments.length > 0) {
+        setAttachments((prev) => {
+          const merged = [...prev, ...addedAttachments];
+          if (merged.length > 12) {
+            setError("Attachment limit is 12 images. Some were dropped.");
+            return merged.slice(0, 12);
+          }
+          return merged;
+        });
+      }
+
+      // Transcribe any audio tracks (audio files, or a video's soundtrack).
+      // Done after the frames are staged so thumbnails appear promptly while
+      // the slower speech-to-text round-trip runs.
+      if (audios.length > 0) {
+        setProcessingLabel("Transcribing audio…");
+        const addedTranscripts: Transcript[] = [];
+        for (const audio of audios) {
+          try {
+            const t = await transcribeAudio(audio);
+            if (t) addedTranscripts.push(t);
+          } catch (e) {
+            setError((e as Error).message);
+          }
         }
-        return merged;
-      });
+        if (addedTranscripts.length > 0) {
+          setTranscripts((prev) => [...prev, ...addedTranscripts]);
+        }
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setProcessingFiles(false);
+      setProcessingLabel("Preparing…");
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
   function removeAttachment(index: number) {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function removeTranscript(index: number) {
+    setTranscripts((prev) => prev.filter((_, i) => i !== index));
   }
 
   const composer = (
@@ -347,12 +446,42 @@ export default function ChatPanel({ uid, initialChat }: Props) {
         </div>
       ) : null}
 
+      {transcripts.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          {transcripts.map((t, i) => (
+            <div
+              key={i}
+              className="group flex items-start gap-2 rounded-lg border border-border-warm bg-saffron-soft/40 px-2.5 py-1.5"
+            >
+              <span className="mt-0.5 text-xs">🎙️</span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[11px] font-medium text-saffron-dark">
+                  {t.sourceName}
+                  {t.truncated ? " (partial transcript)" : ""}
+                </p>
+                <p className="line-clamp-2 text-[11px] leading-snug text-foreground/70">
+                  {t.text}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => removeTranscript(i)}
+                className="grid h-5 w-5 flex-shrink-0 place-items-center rounded-full bg-black/10 text-xs text-foreground/60 opacity-0 transition group-hover:opacity-100"
+                aria-label="Remove transcript"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*,video/*"
+            accept="image/*,video/*,audio/*"
             multiple
             className="hidden"
             onChange={(e) => onFilesPicked(e.target.files)}
@@ -363,7 +492,7 @@ export default function ChatPanel({ uid, initialChat }: Props) {
             disabled={loading || processingFiles}
             className="rounded-full border border-border-warm bg-surface px-3 py-1.5 text-xs font-medium text-saffron-dark transition hover:border-saffron hover:bg-saffron-soft disabled:opacity-50"
           >
-            {processingFiles ? "Preparing…" : "📎 Attach photo or video"}
+            {processingFiles ? processingLabel : "📎 Attach photo, video, or audio"}
           </button>
         </div>
         <button
@@ -464,10 +593,58 @@ export default function ChatPanel({ uid, initialChat }: Props) {
 function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
-      <div className="flex flex-col items-end gap-1">
+      <div className="flex flex-col items-end gap-1.5">
+        {message.media && message.media.length > 0 ? (
+          <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
+            {message.media.map((m, i) => (
+              <div
+                key={i}
+                className="relative h-20 w-20 overflow-hidden rounded-lg border border-border-warm bg-surface"
+                title={
+                  m.kind === "video-frame" && m.frameTotal
+                    ? `${m.sourceName ?? ""} — frame ${m.frameIndex}/${m.frameTotal}`
+                    : m.sourceName
+                }
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={m.url}
+                  alt={m.sourceName ?? "attachment"}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+                {m.kind === "video-frame" && m.frameTotal ? (
+                  <span className="absolute bottom-0 left-0 right-0 bg-black/55 px-1 py-0.5 text-center text-[9px] font-medium text-white">
+                    {m.frameIndex}/{m.frameTotal}
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
         <div className="max-w-[85%] rounded-2xl rounded-br-md bg-saffron px-4 py-3 text-sm leading-relaxed text-white shadow-sm">
           {message.content}
         </div>
+
+        {message.transcripts && message.transcripts.length > 0 ? (
+          <div className="flex max-w-[85%] flex-col gap-1">
+            {message.transcripts.map((t, i) => (
+              <details
+                key={i}
+                className="rounded-lg border border-border-warm bg-surface/80 px-2.5 py-1.5 text-left"
+              >
+                <summary className="cursor-pointer text-[11px] font-medium text-saffron-dark">
+                  🎙️ Transcript — {t.sourceName}
+                </summary>
+                <p className="mt-1 text-[11px] leading-snug text-foreground/70">
+                  {t.text}
+                </p>
+              </details>
+            ))}
+          </div>
+        ) : null}
+
         {message.mediaSummary ? (
           <span className="rounded-full border border-border-warm bg-surface/80 px-2.5 py-0.5 text-[11px] font-medium text-saffron-dark">
             📎 {message.mediaSummary}
@@ -635,8 +812,11 @@ function LegacyAssistantBubble({
   );
 }
 
-function summarizeAttachments(attachments: ChatAttachment[]): string | undefined {
-  if (attachments.length === 0) return undefined;
+function summarizeMedia(
+  attachments: ChatAttachment[],
+  transcripts: Transcript[],
+): string | undefined {
+  if (attachments.length === 0 && transcripts.length === 0) return undefined;
   const photos = attachments.filter((a) => a.kind === "image");
   const frames = attachments.filter((a) => a.kind === "video-frame");
   const parts: string[] = [];
@@ -648,6 +828,11 @@ function summarizeAttachments(attachments: ChatAttachment[]): string | undefined
     const videos = Array.from(new Set(frames.map((f) => f.sourceName)));
     const label = videos.length === 1 ? videos[0] : `${videos.length} videos`;
     parts.push(`${frames.length} keyframes from ${label}`);
+  }
+  if (transcripts.length > 0) {
+    parts.push(
+      `${transcripts.length} transcript${transcripts.length === 1 ? "" : "s"}`,
+    );
   }
   return parts.join(", ");
 }
