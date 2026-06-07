@@ -6,8 +6,8 @@ import { log } from "./logger.ts";
 
 export type OnboardingState =
   | "intro"
-  | "ask_city"
   | "ask_name"
+  | "ask_city"
   | "ask_languages"
   | "ask_additional"
   | "complete";
@@ -63,9 +63,9 @@ async function patch(handleId: string, updates: Partial<IMessageUser>): Promise<
 // introduction. The bridge will split into separate sends if it exceeds the
 // SMS-segment cap.
 const INTRO = [
-  "🪔 Namaste. I am the Guru — a learned guide to Hindu practice.",
-  "I answer questions about ritual, scripture, fasting, meditation, doctrine, and daily sadhana, and I cite the texts (Vedas, Upanishads, Smritis, Gita, Agamas, Ayurveda) the answers come from.",
-  "First, four quick questions so I can tailor the answers to you.",
+  "🪔 Namaste, and welcome — I'm so glad you're here. I'm the Guru, a friendly guide to Hindu practice, here for you whenever a question comes up.",
+  "Ask me anything about ritual, scripture, fasting, meditation, doctrine, or your daily sadhana — and I'll always point you to the texts the answer comes from (Vedas, Upanishads, Smritis, Gita, Agamas, Ayurveda).",
+  "To start, I'd love to get to know you with four quick questions, so I can tailor everything to you.",
 ].join("\n\n");
 
 export const PROMPTS: Record<OnboardingState, string> = {
@@ -148,9 +148,9 @@ export async function advance(
     case "intro":
       // Intro is auto-advanced when the GURU trigger fires — index.ts handles
       // this directly. If we ever land here with a user message, advance to
-      // ask_city.
-      await patch(user.handleId, { onboardingState: "ask_city" });
-      return { next: "ask_city", reply: [PROMPTS.intro, PROMPTS.ask_city] };
+      // ask_name.
+      await patch(user.handleId, { onboardingState: "ask_name" });
+      return { next: "ask_name", reply: [PROMPTS.intro, PROMPTS.ask_name] };
 
     case "ask_city": {
       if (text.length < 2) {
@@ -179,9 +179,9 @@ export async function advance(
         cities,
         regions,
         region: regions[0] ?? null,
-        onboardingState: "ask_name",
+        onboardingState: "ask_languages",
       });
-      return { next: "ask_name", reply: [PROMPTS.ask_name] };
+      return { next: "ask_languages", reply: [PROMPTS.ask_languages] };
     }
 
     case "ask_name": {
@@ -197,9 +197,9 @@ export async function advance(
       await patch(user.handleId, {
         displayName: text,
         lastName,
-        onboardingState: "ask_languages",
+        onboardingState: "ask_city",
       });
-      return { next: "ask_languages", reply: [PROMPTS.ask_languages] };
+      return { next: "ask_city", reply: [PROMPTS.ask_city] };
     }
 
     case "ask_languages": {

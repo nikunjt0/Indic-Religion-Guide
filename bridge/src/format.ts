@@ -1,4 +1,5 @@
 import { config } from "./config.ts";
+import type { SourceGroup } from "../../lib/types/firestore.ts";
 
 // Strip "### SOURCE N" blocks from the model output for the SMS body. Keep the
 // PRACTICE body intact; collapse repeated blank lines. The SOURCE blocks are
@@ -21,6 +22,20 @@ export function citationTail(content: string): string {
   let m: RegExpExecArray | null;
   while ((m = re.exec(content)) !== null) {
     const t = m[1].trim();
+    if (t && !titles.includes(t)) titles.push(t);
+  }
+  if (titles.length === 0) return "";
+  return `\n\nSources: ${titles.join("; ")}`;
+}
+
+// Build the citation tail from the structured source list rather than the
+// answer text. The SMS guru prompt inlines short excerpts and emits no
+// "### SOURCE" headers, so citationTail() finds nothing — this is the fallback
+// used when a share link can't be created.
+export function citationTailFromSources(sources: SourceGroup[]): string {
+  const titles: string[] = [];
+  for (const s of sources) {
+    const t = s.source_title.trim();
     if (t && !titles.includes(t)) titles.push(t);
   }
   if (titles.length === 0) return "";

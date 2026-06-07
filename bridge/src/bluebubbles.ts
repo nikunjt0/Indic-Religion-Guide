@@ -3,6 +3,17 @@ import { io, type Socket } from "socket.io-client";
 import { config } from "./config.ts";
 import { log } from "./logger.ts";
 
+// One attachment off a BlueBubbles message. The bytes are not inline — fetch
+// them with downloadAttachment(guid). transferName is the original filename;
+// mimeType drives how we process it (image vs video vs audio).
+export interface BBAttachment {
+  guid: string;
+  mimeType: string | null;
+  transferName: string | null;
+  totalBytes?: number;
+  uti?: string;
+}
+
 // Minimal shape of a BlueBubbles "new-message" payload — only the fields we
 // actually consume. The server emits much more; ignore the rest.
 export interface IncomingMessage {
@@ -11,6 +22,7 @@ export interface IncomingMessage {
   isFromMe: boolean;
   handle: { address: string } | null;
   chats: { guid: string; style: number }[];
+  attachments?: BBAttachment[];
 }
 
 type Handler = (msg: IncomingMessage) => void | Promise<void>;
@@ -39,6 +51,19 @@ export function connectBlueBubbles(onMessage: Handler): Socket {
   });
 
   return socket;
+}
+
+// Download an attachment's raw bytes by GUID via the BlueBubbles REST API.
+// Returns the bytes as a Buffer. Throws on a non-2xx so the caller can skip
+// just this attachment without failing the whole reply.
+export async function downloadAttachment(guid: string): Promise<Buffer> {
+  const url = `${config.bbUrl}/api/v1/attachment/${encodeURIComponent(guid)}/download?password=${encodeURIComponent(config.bbPassword)}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`attachment download failed: ${res.status} ${body.slice(0, 200)}`);
+  }
+  return Buffer.from(await res.arrayBuffer());
 }
 
 // Send a single text message via the BlueBubbles REST API. Returns the new

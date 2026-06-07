@@ -87,7 +87,7 @@ function buildMediaPreamble(
       `${frames} keyframes sampled from a video (in chronological order)`,
     );
   }
-  return `The user attached ${parts.join(" and ")} with their question. Use them to identify deities, symbols, ritual implements, gestures, postures, manuscript pages, temple architecture, or other visual context relevant to the question. Then answer in the required ### PRACTICE / ### SOURCE format using the retrieved sources below.`;
+  return `The user attached ${parts.join(" and ")} with their question. FIRST, look closely and name out loud the specific things in the image that bear on the question — be concrete and itemize (for a person: beard length and shape, moustache, sideburns, head-hair length, presence or absence of a śikhā/tuft, tilaka or its absence, clothing; for an altar/murti: which deity, the implements, flowers, lamps, their arrangement; for a posture: hands, mudra, seat, direction faced). Do NOT describe the image in generalities that would fit any photo. THEN answer in the required ### PRACTICE / ### SOURCE format, judging those specific particulars against the dharmic norm and citing the retrieved sources below. Give a concrete verdict and exactly what to keep or change — never a generic "keep it tidy / societally appropriate" answer.`;
 }
 
 // Fold transcribed audio/video into a prompt block. Spoken questions, chanted
@@ -174,7 +174,7 @@ export async function POST(req: Request) {
     embedQuery(retrievalQuery),
     matchGuides(question, profile),
   ]);
-  const chunks = await findNearestChunks(queryVec, 8);
+  const chunks = await findNearestChunks(queryVec, 8, { question });
   const grouped = groupChunksBySource(chunks);
 
   // Ship the grouped retrieval up front so the client can render source cards
@@ -270,6 +270,9 @@ export async function POST(req: Request) {
       try {
         const completion = await openai.chat.completions.create({
           model: modelToUse,
+          // Low temperature: the Guru commits to one concrete prescription
+          // rather than hedging across vague options. Specificity over variety.
+          temperature: 0.3,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
             ...priorMessages,

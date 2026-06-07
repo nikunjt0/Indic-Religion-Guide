@@ -18,12 +18,16 @@ export const openai = new Proxy({} as OpenAI, {
 
 export const EMBED_MODEL = "text-embedding-3-small";
 export const EMBED_DIMS = 1536;
-export const CHAT_MODEL = "gpt-4o-mini";
-// Vision-capable model. Used only when the user's turn includes image
-// attachments (or video frames extracted client-side) — gpt-4o-mini is
-// text-only, so we cannot ship image content blocks to it. gpt-4.1 is the
-// current-generation successor to gpt-4o: stronger visual reasoning, a larger
-// context window for the keyframe sequences a video expands into, and cheaper.
+// Text chat model. gpt-4.1 (not the smaller gpt-4o-mini) because the Guru
+// answer has to be *specific* — name the herb, the verse, the step — and a
+// small model collapses into generic, hedged advice no matter how strict the
+// system prompt is. gpt-4.1 follows the imperative-and-cite instructions far
+// more faithfully.
+export const CHAT_MODEL = "gpt-4.1";
+// Vision-capable model. Used when the user's turn includes image attachments
+// (or video frames extracted client-side). Same gpt-4.1 family as the text
+// model: stronger visual reasoning and a large context window for the keyframe
+// sequences a video expands into.
 export const VISION_CHAT_MODEL = "gpt-4.1";
 // Speech-to-text model for audio attachments and the audio track lifted out
 // of videos. gpt-4o-transcribe supersedes whisper-1 with better accuracy on

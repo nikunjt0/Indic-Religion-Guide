@@ -37,6 +37,9 @@ yarn-error.log*
 # secrets
 *-adminsdk-*.json
 
+# bridge runtime
+bridge/bridge.log
+
 # primary text corpus — ingest locally, Firestore is the source of truth
 /manuscripts
 
