@@ -97,6 +97,20 @@ function ayurvedaSpecificityWeight(tags: string[] | undefined): number {
 // question, so a couple of strong wellness matches can't crowd out scripture.
 const AYURVEDA_CAP_DHARMA = 2;
 
+// Poetry is always a supplement, never the backbone of an answer: at most this
+// many poems join the final set, so devotional verse colors the response without
+// displacing the scripture the prescription is grounded in.
+const POETRY_CAP = 2;
+
+// A poem joins the answer only when it is about as on-topic as the best scripture
+// match — within this cosine-distance margin of it. Because the scripture re-rank
+// boost (0.7) would otherwise bury an on-topic poem even when it is the closest
+// raw match, poetry is selected by RAW distance under this gate rather than
+// through rankWeight (see the supplemental-poetry pass in findNearestChunks).
+const POETRY_RELEVANCE_MARGIN = 0.08;
+
+const SCRIPTURE_TYPES = new Set([...CORE_DHARMA, ...OTHER_SCRIPTURE]);
+
 // The corpus is Hindu-only. Retrieval always filters to this single tradition.
 // We over-fetch nearest neighbors, then re-rank by text_type so the right kind
 // of source surfaces for the question's domain (see classifyDomain / rankWeight).
@@ -134,7 +148,12 @@ export async function findNearestChunks(
     seen.add(c.id);
     candidates.push(c);
   }
+  // Rank the non-poetry corpus by domain-weighted distance. Poetry is excluded
+  // here and woven in separately below: the scripture boost would otherwise bury
+  // an on-topic poem even when it is the closest raw match, so poems can never
+  // surface through the weighted ranking.
   const ranked = candidates
+    .filter((c) => c.text_type !== "poetry")
     .map((c) => {
       let score = c._distance * rankWeight(c.text_type, domain);
       // On wellness questions, prefer concrete-remedy Ayurveda over survey prose.
@@ -145,19 +164,45 @@ export async function findNearestChunks(
     })
     .sort((a, b) => a.score - b.score);
 
-  // Take the top k under a soft Ayurveda cap (non-wellness domains), then
-  // backfill ignoring the cap if it ever leaves us short.
+  // Supplemental poetry: the closest poems by RAW distance, capped, and only
+  // those about as on-topic as the best scripture match (within the relevance
+  // margin) so a poem colors a devotional or moral answer but is never dragged
+  // into a remedy or an unrelated query. Skipped entirely on wellness questions.
+  const bestScriptureDist =
+    candidates.find((c) => SCRIPTURE_TYPES.has(c.text_type ?? ""))?._distance ??
+    candidates[0]?._distance ??
+    Number.POSITIVE_INFINITY;
+  const supplementPoems =
+    domain === "wellness"
+      ? []
+      : candidates
+          .filter(
+            (c) =>
+              c.text_type === "poetry" &&
+              c._distance <= bestScriptureDist + POETRY_RELEVANCE_MARGIN,
+          )
+          .slice(0, POETRY_CAP);
+
+  // Fill the non-poetry slots first (under the soft Ayurveda cap) so scripture
+  // leads the answer, then append the supplemental poems. Backfill from the
+  // ranked list if caps or too-few qualifying poems leave us short of k.
   const ayurvedaCap = domain === "wellness" ? k : AYURVEDA_CAP_DHARMA;
+  const scriptureSlots = k - supplementPoems.length;
   const chunks: ChunkDoc[] = [];
   const taken = new Set<string>();
   let ayurvedaTaken = 0;
   for (const { c } of ranked) {
+    if (chunks.length >= scriptureSlots) break;
     if (c.text_type === "ayurveda" && ayurvedaTaken >= ayurvedaCap) continue;
     if (c.text_type === "ayurveda") ayurvedaTaken++;
     const { _distance: _d, ...chunk } = c;
     chunks.push(chunk as ChunkDoc);
     taken.add(c.id);
-    if (chunks.length >= k) break;
+  }
+  for (const c of supplementPoems) {
+    const { _distance: _d, ...chunk } = c;
+    chunks.push(chunk as ChunkDoc);
+    taken.add(c.id);
   }
   if (chunks.length < k) {
     for (const { c } of ranked) {

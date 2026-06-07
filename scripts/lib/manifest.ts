@@ -285,6 +285,91 @@ export const manifest: Record<string, SourceManifestEntry> = {
     language: "english",
     tags: ["ayurveda", "scientific", "therapy", "research", "secondary"],
   },
+
+  // --- Bhakti / devotional poetry. These do not mandate doctrine or ritual;
+  // they carry the bhava — the devotional feeling a practice is meant to invoke —
+  // and supplement scripture on devotion/morality questions (see rankWeight's
+  // poetry branch and the POETRY guidance in lib/rag/prompt.ts).
+  "mirabai-poems.pdf": {
+    title: "Mirabai (Devotional Poems)",
+    tradition: "hindu",
+    text_type: "poetry",
+    translator: null,
+    language: "bilingual",
+    tags: ["poetry", "bhakti", "krishna", "mirabai"],
+  },
+  "Kabir-Poems 07-23.pdf": {
+    title: "Kabir (Poems)",
+    tradition: "hindu",
+    text_type: "poetry",
+    translator: null,
+    language: "english",
+    tags: ["poetry", "bhakti", "nirguna", "kabir"],
+  },
+  "dohawali_of_goswami_tulsidas.pdf": {
+    title: "Dohawali of Goswami Tulsidas",
+    tradition: "hindu",
+    text_type: "poetry",
+    translator: null,
+    language: "bilingual",
+    tags: ["poetry", "bhakti", "rama", "tulsidas"],
+  },
+  "kalidasa_poems.pdf": {
+    title: "Kalidasa (Poems)",
+    tradition: "hindu",
+    text_type: "poetry",
+    translator: null,
+    language: "bilingual",
+    tags: ["poetry", "classical", "sanskrit", "kalidasa"],
+  },
+  "surdas_poems.pdf": {
+    title: "Surdas (Poems)",
+    tradition: "hindu",
+    text_type: "poetry",
+    translator: null,
+    language: "english",
+    tags: ["poetry", "bhakti", "krishna", "surdas"],
+  },
+  "tukaram_poems.pdf": {
+    title: "Tukaram (Abhangas)",
+    tradition: "hindu",
+    text_type: "poetry",
+    translator: null,
+    language: "english",
+    tags: ["poetry", "bhakti", "vithoba", "varkari", "tukaram"],
+  },
+  "namdev_poems.pdf": {
+    title: "Namdev (Poems)",
+    tradition: "hindu",
+    text_type: "poetry",
+    translator: null,
+    language: "english",
+    tags: ["poetry", "bhakti", "varkari", "namdev"],
+  },
+  "tiruppavai_of_andal.pdf": {
+    title: "Tiruppavai of Andal",
+    tradition: "hindu",
+    text_type: "poetry",
+    translator: null,
+    language: "bilingual",
+    tags: ["poetry", "bhakti", "vaishnava", "alvar", "andal"],
+  },
+  "hymns_of_the_alvars.pdf": {
+    title: "Hymns of the Alvars",
+    tradition: "hindu",
+    text_type: "poetry",
+    translator: null,
+    language: "bilingual",
+    tags: ["poetry", "bhakti", "vaishnava", "alvar"],
+  },
+  "sixty-three-nayanar-saints.pdf": {
+    title: "Lives of the 63 Nayanar Saints",
+    tradition: "hindu",
+    text_type: "poetry",
+    translator: null,
+    language: "english",
+    tags: ["poetry", "bhakti", "shaiva", "nayanar"],
+  },
 };
 
 export function lookupManifest(filename: string): SourceManifestEntry | null {
