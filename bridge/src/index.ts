@@ -7,6 +7,7 @@ import {
 } from "./bluebubbles.ts";
 import {
   citationTailFromSources,
+  citationTailWithUrl,
   splitForSms,
   stripSourceBlocks,
   toSmsPlainText,
@@ -297,7 +298,7 @@ async function respondWithGuru(
         sources,
         matchedGuides,
       });
-      if (share) tail = `\n\nSources: ${share.url}`;
+      if (share) tail = citationTailWithUrl(sources, share.url);
     } catch (err) {
       log.error("createShare failed (falling back to citation tail):", err);
     }
