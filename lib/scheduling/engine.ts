@@ -26,6 +26,12 @@ export interface EngineDeps {
   renderMessage?: (delivery: ScheduledDelivery) => Promise<string | null>;
   /** Called exactly once after a confirmed successful send. */
   onSent?: (delivery: ScheduledDelivery, result: SendResult) => Promise<void>;
+  /**
+   * Called when a delivery is suppressed (guard-blocked, paused, disabled…).
+   * Lets recurring pipelines schedule their next occurrence so one suppressed
+   * day doesn't silently kill all future deliveries.
+   */
+  onSuppressed?: (delivery: ScheduledDelivery, code: string) => Promise<void>;
   log?: (message: string, extra?: Record<string, unknown>) => void;
 }
 
@@ -189,6 +195,7 @@ export async function deliverClaimed(
       leaseExpiresAt: null,
       updatedAt: now,
     });
+    await deps.onSuppressed?.(delivery, code);
     return "suppressed";
   };
 

@@ -111,6 +111,36 @@ const engineDeps: EngineDeps = {
     if (d.deliveryType === "program-lesson") await afterLessonSent(d);
     if (d.deliveryType === "daily-dharma") await scheduleNextDailyDharma(d.userId);
   },
+  onSuppressed: async (d, code) => {
+    // A guard-blocked send (MESSAGING_SEND_ENABLED off / not allowlisted) must
+    // not kill the recurring pipeline: queue the next occurrence so deliveries
+    // resume automatically once sending is enabled. Other suppression reasons
+    // (paused, opted out, disabled) intentionally stop the pipeline — RESUME
+    // or START restarts it.
+    if (code !== "send-guard-blocked") return;
+    log.warn(
+      `delivery ${d.id} suppressed by send guard — scheduling next occurrence; ` +
+        `set MESSAGING_SEND_ENABLED=true to actually send`
+    );
+    if (d.deliveryType === "daily-dharma") {
+      await scheduleNextDailyDharma(d.userId);
+      return;
+    }
+    if (d.deliveryType === "program-lesson" && d.enrollmentId && d.programId) {
+      const enrollment = await getEnrollment(adminDb, d.enrollmentId);
+      const program = getProgram(d.programId);
+      const prefs = await getPreferences(adminDb, d.userId);
+      if (!enrollment || enrollment.status !== "active" || !program || !prefs) return;
+      await scheduleCurrentLesson(engineDeps, {
+        enrollment,
+        program,
+        prefs,
+        recipientHandle: d.recipientHandle,
+        recipientChatGuid: d.recipientChatGuid,
+        providerName: d.provider,
+      });
+    }
+  },
   log: (m, extra) => log.info(m, extra ?? ""),
 };
 
@@ -341,9 +371,12 @@ export async function beginOnboardingV2(
       createdAt: Date.now(),
     });
     await reply(chatGuid, [
-      `Welcome to ${PRODUCT_NAME} — a daily Hindu learning companion grounded in scripture. ` +
-        `I'll send one short teaching at the time you choose, and you can ask questions anytime. ` +
-        `Reply STOP anytime to opt out.`,
+      `Namaste, and welcome! 🙏 I'm your Hindu Guru — a daily learning companion grounded in scripture. ` +
+        `I'm trained on the Bhagavad Gita, the Upanishads, the Ramayana and Mahabharata, the Puranas, ` +
+        `devotional poetry, and classical Ayurveda texts — and I cite my sources when I answer.\n\n` +
+        `You can text me any question, anytime: about a verse, a ritual, a festival, or something ` +
+        `you've wondered about for years. I can also send one short teaching each day at a time you ` +
+        `choose. Reply STOP anytime to opt out.`,
       "First — what should I call you?",
     ]);
     return;
