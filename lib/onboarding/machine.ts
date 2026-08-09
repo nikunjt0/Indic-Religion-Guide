@@ -86,8 +86,11 @@ const PROGRAMS: Record<string, string> = {
 
 export function welcomeMessage(ctx: OnboardingContext): string {
   return (
-    `Welcome to ${ctx.productName} — a daily Hindu learning companion grounded in scripture. ` +
-    `I can send one short teaching at the time you choose, and you can ask questions anytime.\n\n` +
+    `Namaste! 🙏 I'm your Hindu Guru — a daily learning companion grounded in scripture. ` +
+    `I'm trained on the Bhagavad Gita, the Upanishads, the Ramayana and Mahabharata, the Puranas, ` +
+    `devotional poetry, and classical Ayurveda texts, and I cite my sources when I answer.\n\n` +
+    `You can text me any question, anytime — about a verse, a ritual, a festival, or something ` +
+    `you've wondered about for years. I can also send one short teaching each day at a time you choose.\n\n` +
     `Reply START to begin. Message frequency depends on your settings. Reply STOP anytime to opt out.`
   );
 }

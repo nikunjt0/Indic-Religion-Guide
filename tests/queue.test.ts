@@ -236,18 +236,36 @@ describe("delivery worker", () => {
     expect((await store.get(record.id))!.failureCode).toBe("server");
   });
 
-  it("send-guard block suppresses instead of failing", async () => {
+  it("send-guard block suppresses instead of failing and fires onSuppressed", async () => {
     const base = makeDeps();
     const guarded = new GuardedMessagingProvider(base.provider, {
       sendEnabled: false,
       allowlist: null,
     });
-    const deps: EngineDeps = { ...base.deps, provider: guarded };
+    const suppressions: string[] = [];
+    const deps: EngineDeps = {
+      ...base.deps,
+      provider: guarded,
+      onSuppressed: async (_d, code) => void suppressions.push(code),
+    };
     const { record } = await enqueueDelivery(deps, enqueueParams());
     const claimed = await base.store.tryClaim(record.id, "w", 120_000, T0);
     expect(await deliverClaimed(deps, claimed!)).toBe("suppressed");
     expect((await base.store.get(record.id))!.failureCode).toBe("send-guard-blocked");
     expect(base.provider.sent).toHaveLength(0);
+    expect(suppressions).toEqual(["send-guard-blocked"]);
+  });
+
+  it("consent-revoked suppression also fires onSuppressed with its code", async () => {
+    const suppressions: string[] = [];
+    const { deps, store } = makeDeps({
+      loadPreferences: async () => prefs({ consentStatus: "revoked" }),
+      onSuppressed: async (_d, code) => void suppressions.push(code),
+    });
+    const { record } = await enqueueDelivery(deps, enqueueParams());
+    const claimed = await store.tryClaim(record.id, "w", 120_000, T0);
+    expect(await deliverClaimed(deps, claimed!)).toBe("suppressed");
+    expect(suppressions).toEqual(["no-consent"]);
   });
 
   it("fails with missing-content when there is nothing to render", async () => {
