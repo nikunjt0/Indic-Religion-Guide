@@ -90,5 +90,13 @@ describe("send guard", () => {
     const off = guardConfigFromEnv({});
     expect(off.sendEnabled).toBe(false);
     expect(off.allowlist).toBeNull();
+    // Tolerant forms all count as enabled…
+    for (const v of ["TRUE", " true ", '"true"', "1", "yes"]) {
+      expect(guardConfigFromEnv({ MESSAGING_SEND_ENABLED: v }).sendEnabled).toBe(true);
+    }
+    // …but anything else stays off.
+    for (const v of ["false", "0", "enabled", ""]) {
+      expect(guardConfigFromEnv({ MESSAGING_SEND_ENABLED: v }).sendEnabled).toBe(false);
+    }
   });
 });

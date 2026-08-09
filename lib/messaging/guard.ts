@@ -18,8 +18,14 @@ export function guardConfigFromEnv(
   env: Record<string, string | undefined> = process.env
 ): SendGuardConfig {
   const allowlistRaw = (env.MESSAGING_TEST_ALLOWLIST ?? "").trim();
+  // Tolerant parse: "true"/"TRUE"/"1"/"yes", quoted or not — a stray space in
+  // .env must not silently disable production sends.
+  const enabledRaw = (env.MESSAGING_SEND_ENABLED ?? "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .toLowerCase();
   return {
-    sendEnabled: env.MESSAGING_SEND_ENABLED === "true",
+    sendEnabled: ["true", "1", "yes"].includes(enabledRaw),
     allowlist: allowlistRaw
       ? allowlistRaw.split(",").map((h) => h.trim().toLowerCase()).filter(Boolean)
       : null,
