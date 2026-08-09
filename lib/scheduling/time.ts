@@ -91,11 +91,16 @@ export function isInQuietHours(
   return minutes >= s || minutes < e; // overnight window
 }
 
+export interface ParsedUserTimeInput {
+  time: string; // "HH:mm"
+  needsMeridiem: boolean;
+}
+
 /**
  * Parse loose user time input ("7:30 AM", "7am", "19:00", "after dinner")
  * into "HH:mm", or null when unparseable. Dayparts map to sensible defaults.
  */
-export function parseUserTimeInput(input: string): string | null {
+export function parseUserTimeInputDetailed(input: string): ParsedUserTimeInput | null {
   const s = input.trim().toLowerCase();
   const dayparts: [RegExp, string][] = [
     [/(early\s+morning|sunrise|dawn)/, "06:30"],
@@ -110,12 +115,22 @@ export function parseUserTimeInput(input: string): string | null {
     let hour = Number(m[2]);
     const minute = m[3] ? Number(m[3]) : 0;
     const meridiem = m[4]?.replace(/\./g, "");
+    const needsMeridiem = !meridiem && hour >= 1 && hour <= 12;
     if (meridiem === "pm" && hour < 12) hour += 12;
     if (meridiem === "am" && hour === 12) hour = 0;
-    if (hour <= 23) return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    if (hour <= 23) {
+      return {
+        time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+        needsMeridiem,
+      };
+    }
   }
   for (const [re, time] of dayparts) {
-    if (re.test(s)) return time;
+    if (re.test(s)) return { time, needsMeridiem: false };
   }
   return null;
+}
+
+export function parseUserTimeInput(input: string): string | null {
+  return parseUserTimeInputDetailed(input)?.time ?? null;
 }

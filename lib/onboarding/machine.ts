@@ -1,4 +1,4 @@
-import { parseUserTimeInput } from "../scheduling/time";
+import { parseUserTimeInputDetailed } from "../scheduling/time";
 import { parseCommand } from "../commands/router";
 
 // Conversational onboarding as an explicit, persisted state machine. The LLM
@@ -318,8 +318,16 @@ export function stepOnboarding(
     }
 
     case "awaiting-delivery-time": {
-      const time = parseUserTimeInput(raw);
-      if (!time) {
+      const parsed = parseUserTimeInputDetailed(raw);
+      if (parsed?.needsMeridiem) {
+        return {
+          nextState: "awaiting-delivery-time",
+          patch: {},
+          replies: ["Please include AM or PM, like “6:25 PM”."],
+          deflected: looksLikeQuestion(raw),
+        };
+      }
+      if (!parsed) {
         return {
           nextState: "awaiting-delivery-time",
           patch: {},
@@ -331,23 +339,49 @@ export function stepOnboarding(
       }
       return {
         nextState: "awaiting-timezone-confirmation",
-        patch: { preferredLocalTime: time },
+        patch: { preferredLocalTime: parsed.time },
         replies: [
-          `Got it — ${formatTime12h(time)} each day.`,
+          `Got it — ${formatTime12h(parsed.time)} each day.`,
           promptFor("awaiting-timezone-confirmation", ctx),
         ],
       };
     }
 
     case "awaiting-timezone-confirmation": {
-      if (/^(yes|yep|yeah|right|correct|that's right|thats right|y)\b/i.test(raw)) {
+      const affirmative = /^(yes|yep|yeah|right|correct|that's right|thats right|y)\b/i.test(raw);
+      const correctedTime = parseUserTimeInputDetailed(raw);
+      const tz = guessTimezone(raw);
+      if (correctedTime?.needsMeridiem) {
+        return {
+          nextState: "awaiting-timezone-confirmation",
+          patch: {},
+          replies: ["Please include AM or PM for the new delivery time, like “6:25 PM”."],
+          deflected: looksLikeQuestion(raw),
+        };
+      }
+      if (correctedTime) {
+        const timezone = tz ?? (affirmative ? ctx.candidateTimezone ?? ctx.defaultTimezone : undefined);
+        return {
+          nextState: timezone ? "awaiting-program-selection" : "awaiting-timezone-confirmation",
+          patch: {
+            preferredLocalTime: correctedTime.time,
+            ...(timezone ? { timezone } : {}),
+          },
+          replies: [
+            `Got it — ${formatTime12h(correctedTime.time)} each day.`,
+            timezone
+              ? promptFor("awaiting-program-selection", ctx)
+              : promptFor("awaiting-timezone-confirmation", ctx),
+          ],
+        };
+      }
+      if (affirmative) {
         return {
           nextState: "awaiting-program-selection",
           patch: { timezone: ctx.candidateTimezone ?? ctx.defaultTimezone },
           replies: [promptFor("awaiting-program-selection", ctx)],
         };
       }
-      const tz = guessTimezone(raw);
       if (tz) {
         return {
           nextState: "awaiting-program-selection",
