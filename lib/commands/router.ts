@@ -1,3 +1,5 @@
+import { parseUserTimeInputDetailed } from "../scheduling/time";
+
 // Deterministic inbound command router. Runs BEFORE any LLM sees the message.
 // Legally/operationally significant commands (STOP, DELETE MY DATA) must
 // never rely on model classification.
@@ -9,7 +11,7 @@ export type Command =
   | { kind: "resume" }
   | { kind: "help" }
   | { kind: "time" }
-  | { kind: "change-time" }
+  | { kind: "change-time"; time?: string; needsMeridiem?: boolean }
   | { kind: "programs" }
   | { kind: "my-program" }
   | { kind: "restart" }
@@ -54,6 +56,10 @@ const EXACT: Record<string, Command> = {
   info: { kind: "help" },
   time: { kind: "time" },
   "change time": { kind: "change-time" },
+  "change my time": { kind: "change-time" },
+  "change delivery time": { kind: "change-time" },
+  "change scheduled time": { kind: "change-time" },
+  "change schedule": { kind: "change-time" },
   programs: { kind: "programs" },
   "my program": { kind: "my-program" },
   restart: { kind: "restart" },
@@ -77,6 +83,27 @@ const EXACT: Record<string, Command> = {
   tomorrow: { kind: "tomorrow" },
 };
 
+function parseNaturalTimeChange(t: string, raw: string): Command | null {
+  const hasChangeVerb = /\b(change|switch|set|move|update|shift|adjust|make)\b/.test(t);
+  const hasDirectTimeChangePhrase =
+    /\b(change|switch|set|move|update|shift|adjust)\s+(?:my\s+)?time\b/.test(t);
+  const hasDeliveryTarget =
+    /\b(delivery|deliveries|scheduled|schedule|daily|lesson|lessons|message|messages|text|texts|teaching|teachings)\b/.test(
+      t
+    ) || /\bmy\s+time\b/.test(t);
+  const isCorrection = /^no\s+my\s+scheduled\s+time\b/.test(t);
+  if (!(isCorrection || hasDirectTimeChangePhrase || (hasChangeVerb && hasDeliveryTarget))) {
+    return null;
+  }
+
+  const parsed = parseUserTimeInputDetailed(raw);
+  return {
+    kind: "change-time",
+    time: parsed?.time,
+    needsMeridiem: parsed?.needsMeridiem,
+  };
+}
+
 /**
  * Parse a message into a command, or null when it is free-form text for the
  * answer engine. Only whole-message matches count — "please stop sending
@@ -96,6 +123,9 @@ export function parseCommand(text: string): Command | null {
   // PAUSE A WEEK / PAUSE ONE WEEK
   const pauseWeek = /^pause(?:\s+for)?\s+(?:a|one|1)\s+week$/.exec(t);
   if (pauseWeek) return { kind: "pause", days: 7 };
+
+  const timeChange = parseNaturalTimeChange(t, text);
+  if (timeChange) return timeChange;
 
   return null;
 }
