@@ -96,7 +96,20 @@ export async function enqueueDelivery(
     createdAt: now,
     updatedAt: now,
   };
-  return deps.store.createIfAbsent(record);
+  const result = await deps.store.createIfAbsent(record);
+  if (result.created || result.record.status !== "canceled") return result;
+
+  // Rescheduling can intentionally cancel and recreate the same logical
+  // delivery: same user/enrollment/day/local-date dedup key, new delivery time.
+  // Revive canceled records so the dispatcher can see the new queued work.
+  const revived: ScheduledDelivery = {
+    ...record,
+    leaseOwner: null,
+    leaseExpiresAt: null,
+    createdAt: result.record.createdAt,
+  };
+  await deps.store.update(record.id, revived);
+  return { created: true, record: revived };
 }
 
 /** Cancel all pending deliveries for a user (optionally only some types). */
