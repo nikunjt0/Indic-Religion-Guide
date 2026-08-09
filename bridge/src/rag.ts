@@ -7,6 +7,7 @@ import {
   compressPriorAssistantTurn,
   groupChunksBySource,
 } from "../../lib/rag/prompt.ts";
+import { withRiskAddendum } from "../../lib/answers/risk.ts";
 import {
   embedQuery,
   findNearestChunks,
@@ -169,7 +170,7 @@ export async function askGuru(args: {
     // Low temperature: commit to one concrete prescription, don't hedge.
     temperature: 0.3,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT_SMS },
+      { role: "system", content: withRiskAddendum(SYSTEM_PROMPT_SMS, effectiveQuestion) },
       ...priorMessages,
       { role: "user", content: currentUserContent },
     ],

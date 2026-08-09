@@ -25,6 +25,12 @@ import {
 import { askGuru } from "./rag.ts";
 import { createShare } from "./shares.ts";
 import { imessageUsersCol } from "./firestore.ts";
+import {
+  beginOnboardingV2,
+  dedupInbound,
+  handleCompanionInbound,
+  startDispatcher,
+} from "./companion.ts";
 import type { MatchedGuideRef, SourceGroup } from "../../lib/types/firestore.ts";
 
 // iMessage chat.style: 45 = direct (1:1), 43 = group. We only engage in 1:1
@@ -73,7 +79,7 @@ function handleInbound(raw: IncomingMessage): void {
   // Serialize everything from here on per handleId (Firestore reads, onboarding,
   // RAG, and the history write) so a single person's turns never interleave.
   runSerial(handleId, () =>
-    processInbound({ handle, handleId, chatGuid, text, attachments }),
+    processInbound({ handle, handleId, chatGuid, text, attachments, eventGuid: raw.guid }),
   );
 }
 
@@ -83,6 +89,7 @@ interface InboundContext {
   chatGuid: string;
   text: string;
   attachments: BBAttachment[];
+  eventGuid: string;
 }
 
 async function processInbound({
@@ -91,19 +98,48 @@ async function processInbound({
   chatGuid,
   text,
   attachments,
+  eventGuid,
 }: InboundContext): Promise<void> {
-  // Stranger gate: if this handle has no user doc yet, only the literal
-  // trigger word "guru" (case-insensitive, surrounding whitespace ignored)
-  // creates a session. Everything else is dropped silently.
+  // Deduplicate: BlueBubbles can re-emit the same message event. The event
+  // GUID is recorded exactly once in messageEvents; a duplicate is dropped
+  // before it can double-process or double-reply.
+  try {
+    const first = await dedupInbound(eventGuid, handleId, text);
+    if (!first) {
+      log.info(`duplicate event ${eventGuid} ignored`);
+      return;
+    }
+  } catch (err) {
+    // Dedup bookkeeping must never take the bridge down; worst case we
+    // process a duplicate like the legacy behavior did.
+    log.error("dedupInbound failed (continuing):", err);
+  }
+
+  // Stranger gate: if this handle has no user doc yet, the trigger word or
+  // START begins the consent-first onboarding. Everything else is dropped.
   const existingSnap = await imessageUsersCol().doc(handleId).get();
   if (!existingSnap.exists) {
-    if (text.toLowerCase() !== config.triggerWord) {
+    const opener = text.toLowerCase().replace(/[^a-z ]/g, "").trim();
+    if (opener !== config.triggerWord && opener !== "start") {
       log.info(`ignoring stranger ${handle}: "${text.slice(0, 60)}"`);
       return;
     }
     log.info(`activating new user ${handle}`);
-    const { user } = await getOrCreate(handleId, handle, chatGuid);
-    await runOnboardingFromIntro(user, chatGuid);
+    // Legacy onboarding is superseded by v2: mark it complete so the old
+    // machine never runs for new users.
+    await imessageUsersCol().doc(handleId).set(
+      {
+        handleId,
+        handle,
+        chatGuid,
+        onboardingState: "complete",
+        traditions: ["hindu"],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+      { merge: true },
+    );
+    await beginOnboardingV2({ handleId, handle, chatGuid }, chatGuid);
     return;
   }
 
@@ -134,6 +170,19 @@ async function processInbound({
     const fresh = (await imessageUsersCol().doc(handleId).get()).data() as IMessageUser;
     await runOnboardingFromIntro(fresh, chatGuid);
     return;
+  }
+
+  // Companion layer: onboarding-v2 steps and deterministic commands
+  // (STOP/PAUSE/DEEPER/…) are handled before anything reaches the LLM.
+  try {
+    const handled = await handleCompanionInbound(
+      user as unknown as Parameters<typeof handleCompanionInbound>[0],
+      chatGuid,
+      text,
+    );
+    if (handled) return;
+  } catch (err) {
+    log.error("companion handling failed (falling through):", err);
   }
 
   if (user.onboardingState !== "complete") {
@@ -268,6 +317,7 @@ async function sendUserMessages(chatGuid: string, messages: string[]): Promise<v
 function main(): void {
   log.info(`Indic Guide bridge starting (BB_URL=${config.bbUrl})`);
   connectBlueBubbles(handleInbound);
+  startDispatcher();
   log.info("listening for new-message events");
 }
 

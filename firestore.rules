@@ -30,5 +30,40 @@ service cloud.firestore {
     match /queries/{queryId} {
       allow read, write: if false;
     }
+
+    // Companion collections are server-only: the bridge and Next server use
+    // the Admin SDK; browser clients never touch these directly.
+    match /deliveryPreferences/{userId} {
+      allow read, write: if false;
+    }
+    match /scheduledDeliveries/{deliveryId} {
+      allow read, write: if false;
+    }
+    match /enrollments/{enrollmentId} {
+      allow read, write: if false;
+    }
+    match /messageEvents/{eventId} {
+      allow read, write: if false;
+    }
+    match /imessageUsers/{handleId} {
+      allow read, write: if false;
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+    match /programs/{programId} {
+      // Published program metadata is publicly readable for the web catalog.
+      allow read: if resource.data.status == 'published';
+      allow write: if false;
+      match /lessons/{lessonId} {
+        allow read, write: if false;
+      }
+    }
+    match /publicAnswers/{answerId} {
+      // Only published answers are readable from the client; the server
+      // renders them anyway, so this is defense in depth.
+      allow read: if resource.data.reviewStatus == 'published';
+      allow write: if false;
+    }
   }
 }
