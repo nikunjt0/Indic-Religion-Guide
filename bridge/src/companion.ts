@@ -309,8 +309,45 @@ async function reply(chatGuid: string, messages: string[]): Promise<void> {
   if (expanded.length > 0) await sendSegments(chatGuid, expanded);
 }
 
-/** Kick off consent-first onboarding for a brand-new or restarting user. */
-export async function beginOnboardingV2(user: CompanionUserDoc, chatGuid: string): Promise<void> {
+/**
+ * Kick off consent-first onboarding for a brand-new or restarting user.
+ * When the opener itself is START (e.g. from a "text START to …" CTA), that
+ * message IS the affirmative consent — don't ask the user to reply START to
+ * their own START.
+ */
+export async function beginOnboardingV2(
+  user: CompanionUserDoc,
+  chatGuid: string,
+  initialText = ""
+): Promise<void> {
+  const openerCmd = parseCommand(initialText);
+  if (openerCmd?.kind === "start") {
+    await imessageUsersCol().doc(user.handleId).set(
+      { onboardingV2State: "awaiting-name", chatGuid, updatedAt: Date.now() },
+      { merge: true }
+    );
+    await savePreferences(adminDb, user.handleId, {
+      consentStatus: "granted",
+      consentTimestamp: Date.now(),
+      consentSource: "imessage",
+      enabled: true,
+      dailyDharmaEnabled: false,
+      programMessagesEnabled: true,
+      festivalMessagesEnabled: true,
+      weeklyRecapEnabled: true,
+      inactivityCheckInsEnabled: true,
+      timezone: DEFAULT_TZ,
+      preferredLocalTime: "07:30",
+      createdAt: Date.now(),
+    });
+    await reply(chatGuid, [
+      `Welcome to ${PRODUCT_NAME} — a daily Hindu learning companion grounded in scripture. ` +
+        `I'll send one short teaching at the time you choose, and you can ask questions anytime. ` +
+        `Reply STOP anytime to opt out.`,
+      "First — what should I call you?",
+    ]);
+    return;
+  }
   await imessageUsersCol().doc(user.handleId).set(
     { onboardingV2State: "awaiting-consent", chatGuid, updatedAt: Date.now() },
     { merge: true }

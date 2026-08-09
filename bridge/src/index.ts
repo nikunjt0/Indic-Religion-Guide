@@ -31,6 +31,7 @@ import {
   handleCompanionInbound,
   startDispatcher,
 } from "./companion.ts";
+import { parseCommand } from "../../lib/commands/router.ts";
 import type { MatchedGuideRef, SourceGroup } from "../../lib/types/firestore.ts";
 
 // iMessage chat.style: 45 = direct (1:1), 43 = group. We only engage in 1:1
@@ -61,8 +62,28 @@ function runSerial(handleId: string, task: () => Promise<void>): void {
   });
 }
 
+// In-memory duplicate shield, independent of Firestore: BlueBubbles can
+// re-emit an event (reconnects, server restarts), and Firestore-based dedup
+// can't help if the write itself fails. Remembers recent event GUIDs.
+const seenEventGuids = new Set<string>();
+const SEEN_GUIDS_MAX = 1000;
+
+function alreadySeen(guid: string): boolean {
+  if (seenEventGuids.has(guid)) return true;
+  seenEventGuids.add(guid);
+  if (seenEventGuids.size > SEEN_GUIDS_MAX) {
+    const oldest = seenEventGuids.values().next().value;
+    if (oldest !== undefined) seenEventGuids.delete(oldest);
+  }
+  return false;
+}
+
 function handleInbound(raw: IncomingMessage): void {
   if (raw.isFromMe) return;
+  if (raw.guid && alreadySeen(raw.guid)) {
+    log.info(`duplicate socket event ${raw.guid} ignored (in-memory)`);
+    return;
+  }
   const chat = raw.chats?.[0];
   if (!chat || chat.style !== STYLE_DIRECT) return;
   const text = (raw.text ?? "").trim();
@@ -139,7 +160,7 @@ async function processInbound({
       },
       { merge: true },
     );
-    await beginOnboardingV2({ handleId, handle, chatGuid }, chatGuid);
+    await beginOnboardingV2({ handleId, handle, chatGuid }, chatGuid, text);
     return;
   }
 
@@ -182,7 +203,20 @@ async function processInbound({
     );
     if (handled) return;
   } catch (err) {
-    log.error("companion handling failed (falling through):", err);
+    // A failed command/onboarding step must NEVER fall through to the LLM —
+    // RAG-answering the literal word "START" or "STOP" is worse than silence.
+    log.error("companion handling failed:", err);
+    await sendUserMessages(chatGuid, [
+      "Something went wrong on my end — please send that again in a moment.",
+    ]);
+    return;
+  }
+
+  // Belt and braces: a bare command that somehow wasn't handled above still
+  // must not be sent to the answer engine as a question.
+  if (parseCommand(text)) {
+    log.warn(`unhandled command "${text.slice(0, 30)}" — suppressing RAG fallthrough`);
+    return;
   }
 
   if (user.onboardingState !== "complete") {
