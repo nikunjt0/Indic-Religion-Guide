@@ -100,6 +100,13 @@ describe("onboarding state machine", () => {
     expect(r.replies[0]).toContain("7:30 PM");
   });
 
+  it("asks for AM or PM when delivery time is ambiguous", () => {
+    const r = stepOnboarding("awaiting-delivery-time", "6:25", ctx);
+    expect(r.nextState).toBe("awaiting-delivery-time");
+    expect(r.patch.preferredLocalTime).toBeUndefined();
+    expect(r.replies[0]).toContain("AM or PM");
+  });
+
   it("re-asks on unparseable time", () => {
     const r = stepOnboarding("awaiting-delivery-time", "whenever works", ctx);
     expect(r.nextState).toBe("awaiting-delivery-time");
@@ -109,6 +116,19 @@ describe("onboarding state machine", () => {
     const r = stepOnboarding("awaiting-timezone-confirmation", "I'm in Mumbai actually", ctx);
     expect(r.nextState).toBe("awaiting-program-selection");
     expect(r.patch.timezone).toBe("Asia/Kolkata");
+  });
+
+  it("keeps a corrected delivery time while confirming timezone", () => {
+    const r = stepOnboarding(
+      "awaiting-timezone-confirmation",
+      "Yes but actually switch to 6:10 pm",
+      ctx
+    );
+    expect(r.nextState).toBe("awaiting-program-selection");
+    expect(r.patch).toMatchObject({
+      preferredLocalTime: "18:10",
+      timezone: "America/Chicago",
+    });
   });
 
   it("flags mid-flow questions as deflected without losing the step", () => {

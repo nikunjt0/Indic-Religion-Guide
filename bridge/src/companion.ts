@@ -36,7 +36,11 @@ import {
 } from "../../lib/scheduling/engine.ts";
 import { FirestoreDeliveryStore } from "../../lib/scheduling/firestore-store.ts";
 import { systemClock } from "../../lib/scheduling/clock.ts";
-import { localDateOf, nextOccurrence, parseUserTimeInput } from "../../lib/scheduling/time.ts";
+import {
+  localDateOf,
+  nextOccurrence,
+  parseUserTimeInputDetailed,
+} from "../../lib/scheduling/time.ts";
 import { BlueBubblesMessagingProvider } from "../../lib/messaging/bluebubbles.ts";
 import { GuardedMessagingProvider } from "../../lib/messaging/guarded.ts";
 import { guardConfigFromEnv } from "../../lib/messaging/guard.ts";
@@ -421,10 +425,16 @@ export async function handleCompanionInbound(
 
   // Pending time change ("CHANGE TIME" → next message is the new time).
   if (user.pendingTimeChange) {
-    const time = parseUserTimeInput(text);
-    if (time) {
+    const parsed = parseUserTimeInputDetailed(text);
+    if (parsed?.needsMeridiem) {
+      await reply(chatGuid, [
+        "Please include AM or PM for that delivery time, like “6:25 PM”.",
+      ]);
+      return true;
+    }
+    if (parsed) {
       await userRef.set({ pendingTimeChange: false }, { merge: true });
-      await changeDeliveryTime(user, chatGuid, time);
+      await changeDeliveryTime(user, chatGuid, parsed.time);
       return true;
     }
     await userRef.set({ pendingTimeChange: false }, { merge: true });
@@ -685,6 +695,17 @@ async function handleCommand(
     }
 
     case "change-time": {
+      if (cmd.needsMeridiem) {
+        await imessageUsersCol().doc(userId).set({ pendingTimeChange: true }, { merge: true });
+        await reply(chatGuid, [
+          "Please include AM or PM for that delivery time, like “6:25 PM”.",
+        ]);
+        return;
+      }
+      if (cmd.time) {
+        await changeDeliveryTime(user, chatGuid, cmd.time);
+        return;
+      }
       await imessageUsersCol().doc(userId).set({ pendingTimeChange: true }, { merge: true });
       await reply(chatGuid, [
         "What time should your messages arrive? You can say “7:30 AM” or “after dinner”.",

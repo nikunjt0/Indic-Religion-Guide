@@ -6,6 +6,7 @@ import {
   nextOccurrence,
   parseLocalTime,
   parseUserTimeInput,
+  parseUserTimeInputDetailed,
 } from "../lib/scheduling/time";
 
 const msAt = (iso: string, zone: string) => DateTime.fromISO(iso, { zone }).toMillis();
@@ -194,6 +195,11 @@ describe("parseUserTimeInput", () => {
   });
   it("returns null for unparseable input", () => {
     expect(parseUserTimeInput("whenever")).toBeNull();
+  });
+  it("reports when a numeric time needs AM or PM clarification", () => {
+    expect(parseUserTimeInputDetailed("6:25")).toEqual({ time: "06:25", needsMeridiem: true });
+    expect(parseUserTimeInputDetailed("6:25 pm")).toEqual({ time: "18:25", needsMeridiem: false });
+    expect(parseUserTimeInputDetailed("19:00")).toEqual({ time: "19:00", needsMeridiem: false });
   });
 });
 

@@ -32,6 +32,32 @@ describe("parseCommand", () => {
     expect(parseCommand("story")).toEqual({ kind: "story" });
   });
 
+  it("detects natural-language delivery time changes", () => {
+    expect(parseCommand("Hey can we switch my time to 6:25 PM")).toEqual({
+      kind: "change-time",
+      time: "18:25",
+      needsMeridiem: false,
+    });
+    expect(parseCommand("CHANGE TIME 6:25 PM")).toEqual({
+      kind: "change-time",
+      time: "18:25",
+      needsMeridiem: false,
+    });
+    expect(parseCommand("No my scheduled time for the daily text.")).toEqual({
+      kind: "change-time",
+      time: undefined,
+      needsMeridiem: undefined,
+    });
+  });
+
+  it("flags ambiguous delivery time changes instead of guessing AM", () => {
+    expect(parseCommand("switch my daily text to 6:25")).toEqual({
+      kind: "change-time",
+      time: "06:25",
+      needsMeridiem: true,
+    });
+  });
+
   it("does not treat sentences containing command words as commands", () => {
     expect(parseCommand("please stop sending essays about karma")).toBeNull();
     expect(parseCommand("can I pause my puja during travel?")).toBeNull();
