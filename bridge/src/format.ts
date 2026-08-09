@@ -1,5 +1,6 @@
-import { config } from "./config.ts";
 import type { SourceGroup } from "../../lib/types/firestore.ts";
+
+const DEFAULT_SMS_SEGMENT = 1500;
 
 // Strip "### SOURCE N" blocks from the model output for the SMS body. Keep the
 // PRACTICE body intact; collapse repeated blank lines. The SOURCE blocks are
@@ -29,17 +30,62 @@ export function citationTail(content: string): string {
 }
 
 // Build the citation tail from the structured source list rather than the
-// answer text. The SMS guru prompt inlines short excerpts and emits no
-// "### SOURCE" headers, so citationTail() finds nothing — this is the fallback
-// used when a share link can't be created.
+// answer text. The SMS guru prompt emits a synthesis without "### SOURCE"
+// headers, so citationTail() finds nothing — this is the fallback used when a
+// share link can't be created.
 export function citationTailFromSources(sources: SourceGroup[]): string {
-  const titles: string[] = [];
-  for (const s of sources) {
-    const t = s.source_title.trim();
-    if (t && !titles.includes(t)) titles.push(t);
+  const labels = compactSourceLabels(sources);
+  if (labels.length === 0) return "";
+  return `\n\nSources: ${labels.join("; ")}`;
+}
+
+export function citationTailWithUrl(sources: SourceGroup[], url: string): string {
+  const labels = compactSourceLabels(sources);
+  const compact = labels.length > 0 ? `Sources: ${labels.join("; ")}` : "Sources";
+  return `\n\n${compact}\nFull source excerpts: ${url}`;
+}
+
+export function compactSourceLabels(sources: SourceGroup[], maxSources = 3): string[] {
+  const labels: string[] = [];
+  for (const source of sources) {
+    const title = compactSourceTitle(source.source_title);
+    if (!title) continue;
+    const refs = compactRefs(source);
+    const label = refs ? `${title} ${refs}` : title;
+    if (!labels.includes(label)) labels.push(label);
+    if (labels.length >= maxSources) break;
   }
-  if (titles.length === 0) return "";
-  return `\n\nSources: ${titles.join("; ")}`;
+  return labels;
+}
+
+function compactSourceTitle(title: string): string {
+  return title
+    .trim()
+    .replace(/^the complete book of\s+/i, "")
+    .replace(/\s+/g, " ");
+}
+
+function compactRefs(source: SourceGroup): string {
+  const verseRefs: string[] = [];
+  const pages: number[] = [];
+  for (const q of source.quotes) {
+    const chapter = q.chapter?.trim();
+    const verse = q.verse?.trim();
+    if (chapter && verse) {
+      const ref = `${chapter}.${verse}`;
+      if (!verseRefs.includes(ref)) verseRefs.push(ref);
+      continue;
+    }
+    if (chapter && !verseRefs.includes(chapter)) {
+      verseRefs.push(chapter);
+      continue;
+    }
+    if (Number.isFinite(q.page) && !pages.includes(q.page)) pages.push(q.page);
+  }
+  if (verseRefs.length > 0) return verseRefs.slice(0, 2).join(", ");
+  if (pages.length === 1) return `p.${pages[0]}`;
+  if (pages.length > 1) return `pp.${pages.slice(0, 3).join(", ")}`;
+  return "";
 }
 
 // SMS has no markdown renderer — the LLM's `**bold**` etc. would appear as
@@ -79,7 +125,7 @@ export function toSmsPlainText(content: string): string {
 // Split a long string into ≤maxLen chunks at paragraph / sentence / whitespace
 // boundaries when possible. iMessage handles long single messages fine but
 // chunking improves readability in the conversation timeline.
-export function splitForSms(text: string, maxLen = config.maxSmsSegment): string[] {
+export function splitForSms(text: string, maxLen = DEFAULT_SMS_SEGMENT): string[] {
   const out: string[] = [];
   let remaining = text;
   while (remaining.length > maxLen) {
