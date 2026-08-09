@@ -38,6 +38,9 @@ export async function generateMetadata({ params }: PageProps<"/q/[id]">) {
   return {
     title: share.question.slice(0, 90),
     description: description || undefined,
+    // Private shared conversations must never be indexed. The reviewed public
+    // library at /learn is the indexable surface.
+    robots: { index: false, follow: false },
     openGraph: {
       title: share.question.slice(0, 90),
       description: description || undefined,

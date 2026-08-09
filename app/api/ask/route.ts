@@ -10,6 +10,7 @@ import {
   compressPriorAssistantTurn,
   groupChunksBySource,
 } from "@/lib/rag/prompt";
+import { withRiskAddendum } from "@/lib/answers/risk";
 import {
   embedQuery,
   findNearestChunks,
@@ -274,7 +275,10 @@ export async function POST(req: Request) {
           // rather than hedging across vague options. Specificity over variety.
           temperature: 0.3,
           messages: [
-            { role: "system", content: SYSTEM_PROMPT },
+            {
+              role: "system",
+              content: withRiskAddendum(SYSTEM_PROMPT, parsed.data.question),
+            },
             ...priorMessages,
             { role: "user", content: currentUserContent },
           ],
