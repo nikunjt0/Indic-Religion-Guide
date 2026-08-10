@@ -111,15 +111,22 @@ const POETRY_RELEVANCE_MARGIN = 0.08;
 
 const SCRIPTURE_TYPES = new Set([...CORE_DHARMA, ...OTHER_SCRIPTURE]);
 
+// Chunks already quoted to this user earlier in the conversation are demoted so
+// a follow-up surfaces fresh material instead of the same verse again. It is a
+// multiplier, not an exclusion: a chunk that is still decisively the closest
+// match (e.g. the user asks for "the exact passage") can still win its slot.
+const PRIOR_QUOTE_DEMOTION = 1.3;
+
 // The corpus is Hindu-only. Retrieval always filters to this single tradition.
 // We over-fetch nearest neighbors, then re-rank by text_type so the right kind
 // of source surfaces for the question's domain (see classifyDomain / rankWeight).
 export async function findNearestChunks(
   queryVector: number[],
   k = 8,
-  opts: { question?: string } = {},
+  opts: { question?: string; demoteChunkIds?: ReadonlySet<string> } = {},
 ): Promise<(ChunkDoc & { source_title: string })[]> {
   const domain = classifyDomain(opts.question ?? "");
+  const demoted = opts.demoteChunkIds;
   // Pull a wide candidate pool so the re-rank has room to promote scripture that
   // pure cosine distance leaves outside the top k — for a dharma question the
   // nearest neighbors skew to modern-prose Ayurveda/secondary, so we need depth
@@ -160,6 +167,7 @@ export async function findNearestChunks(
       if (domain === "wellness" && c.text_type === "ayurveda") {
         score *= ayurvedaSpecificityWeight(c.tags);
       }
+      if (demoted?.has(c.id)) score *= PRIOR_QUOTE_DEMOTION;
       return { c, score };
     })
     .sort((a, b) => a.score - b.score);
@@ -176,12 +184,18 @@ export async function findNearestChunks(
     domain === "wellness"
       ? []
       : candidates
-          .filter(
-            (c) =>
-              c.text_type === "poetry" &&
-              c._distance <= bestScriptureDist + POETRY_RELEVANCE_MARGIN,
-          )
-          .slice(0, POETRY_CAP);
+          .filter((c) => c.text_type === "poetry")
+          .map((c) => ({
+            c,
+            // Same demotion as the ranked pass, applied to the raw distance the
+            // poetry gate compares against, so an already-quoted poem yields to
+            // a fresh one on follow-ups.
+            eff: c._distance * (demoted?.has(c.id) ? PRIOR_QUOTE_DEMOTION : 1),
+          }))
+          .filter(({ eff }) => eff <= bestScriptureDist + POETRY_RELEVANCE_MARGIN)
+          .sort((a, b) => a.eff - b.eff)
+          .slice(0, POETRY_CAP)
+          .map(({ c }) => c);
 
   // Fill the non-poetry slots first (under the soft Ayurveda cap) so scripture
   // leads the answer, then append the supplemental poems. Backfill from the

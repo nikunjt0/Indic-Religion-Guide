@@ -10,9 +10,11 @@ import {
 
 describe("RAG response style policy", () => {
   it("is shared by web and SMS system prompts", () => {
-    expect(PROMPT_VERSION).toBe("v11-natural-followups");
-    expect(PROMPT_VERSION_SMS).toBe("v6-natural-followups-sms");
+    expect(PROMPT_VERSION).toBe("v12-answer-the-followup");
+    expect(PROMPT_VERSION_SMS).toBe("v7-answer-the-followup-sms");
     expect(RESPONSE_STYLE_POLICY).toContain("Synthesize first");
+    expect(RESPONSE_STYLE_POLICY).toContain("Answer what the newest message actually asks");
+    expect(RESPONSE_STYLE_POLICY).toContain("Never repeat yourself across turns");
     expect(RESPONSE_STYLE_POLICY).toContain("at most 1 short direct quote");
     expect(RESPONSE_STYLE_POLICY).toContain("Explain unfamiliar concepts immediately");
     expect(RESPONSE_STYLE_POLICY).toContain("Rank recommendations");
