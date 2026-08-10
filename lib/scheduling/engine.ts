@@ -22,6 +22,13 @@ export interface EngineDeps {
   provider: MessagingProvider;
   clock: Clock;
   loadPreferences: (userId: string) => Promise<DeliveryPreferences | null>;
+  /**
+   * Membership gate for proactive deliveries, checked at send time. Absent =
+   * no billing gate (tests, environments without Stripe). Returning false
+   * suppresses with code "no-membership" — trial expired or subscription
+   * period over.
+   */
+  hasAccess?: (userId: string) => Promise<boolean>;
   /** Render the message body when delivery.renderedMessage is absent. */
   renderMessage?: (delivery: ScheduledDelivery) => Promise<string | null>;
   /** Called exactly once after a confirmed successful send. */
@@ -249,6 +256,9 @@ export async function deliverClaimed(
     if (!prefs || !prefs.enabled) return suppress("delivery-disabled");
     if (prefs.consentStatus !== "granted") return suppress("no-consent");
     if (prefs.pausedUntil && prefs.pausedUntil > now) return suppress("paused");
+    if (deps.hasAccess && !(await deps.hasAccess(delivery.userId))) {
+      return suppress("no-membership");
+    }
     const flag = PROACTIVE_FLAG[delivery.deliveryType]!;
     if (prefs[flag] === false) return suppress("type-disabled");
     if (isInQuietHours(now, delivery.timezone, prefs.quietHoursStart, prefs.quietHoursEnd)) {

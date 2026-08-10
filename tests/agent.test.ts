@@ -34,6 +34,11 @@ function snapshot(overrides: Partial<CompanionAgentSnapshot> = {}): CompanionAge
       },
     ],
     localNowText: "Monday, Aug 10, 11:20 AM CDT",
+    membership: {
+      state: "active",
+      priceText: "$5/month with a 1-week free trial — cancel anytime",
+      renewsText: "Sunday, Aug 17",
+    },
     ...overrides,
   };
 }
@@ -67,6 +72,11 @@ function fakeExecutor(overrides: Partial<CompanionToolExecutor> = {}) {
     skipTodaysLesson: stub("skipTodaysLesson"),
     optOut: stub("optOut"),
     getLessonContent: stub("getLessonContent"),
+    cancelMembership: stub("cancelMembership", {
+      status: "canceled",
+      accessUntil: "Sunday, Aug 17",
+    }),
+    resumeMembership: stub("resumeMembership"),
     ...overrides,
   };
   return { calls, executor };
@@ -123,6 +133,40 @@ describe("companion agent system prompt", () => {
     );
     expect(prompt).toContain("on, arrives at 6:00 AM (America/Chicago)");
     expect(prompt).toContain("several programs at the same time");
+  });
+
+  it("describes the membership state and the confirm-before-cancel rule", () => {
+    const prompt = buildCompanionSystemPrompt(snapshot());
+    expect(prompt).toContain("Membership: active — renews on Sunday, Aug 17");
+    expect(prompt).toContain("Call cancel_membership ONLY after they clearly confirm");
+    expect(prompt).toContain("$5/month with a 1-week free trial");
+  });
+
+  it("gives non-members their signup link and canceled members their access-until date", () => {
+    const notYet = buildCompanionSystemPrompt(
+      snapshot({
+        membership: {
+          state: "none",
+          priceText: "$5/month with a 1-week free trial — cancel anytime",
+          signupUrl: "https://buy.stripe.com/test?client_reference_id=abc123",
+        },
+      })
+    );
+    expect(notYet).toContain("Membership: not started yet");
+    expect(notYet).toContain("https://buy.stripe.com/test?client_reference_id=abc123");
+
+    const canceling = buildCompanionSystemPrompt(
+      snapshot({
+        membership: {
+          state: "canceling",
+          priceText: "$5/month with a 1-week free trial — cancel anytime",
+          accessUntilText: "Sunday, Aug 17",
+        },
+      })
+    );
+    expect(canceling).toContain(
+      "Membership: canceled — billing has stopped, but access and daily texts continue until Sunday, Aug 17"
+    );
   });
 
   it("tells the model when the user is opted out or not set up", () => {
@@ -291,6 +335,51 @@ describe("runCompanionAgent", () => {
       actionsTaken: 1,
     });
     expect(calls.map((c) => c.name)).toEqual(["enrollInProgram"]);
+  });
+
+  it("cancels the membership through the tool and reports the access-until date", async () => {
+    const { executor, calls } = fakeExecutor();
+    const model = scriptedModel([
+      { content: null, tool_calls: [toolCall("cancel_membership", {})] },
+      { content: "Done — you won't be billed again, and you have access until Sunday, Aug 17. 🙏" },
+    ]);
+    const result = await runCompanionAgent({
+      message: "Yes, I'm sure — please cancel it.",
+      history: [
+        { role: "user", content: "I want to stop paying for this" },
+        { role: "assistant", content: "Are you sure? You'd keep everything until Sunday, Aug 17." },
+      ],
+      snapshot: snapshot(),
+      executor,
+      createCompletion: model.create,
+    });
+    expect(result).toEqual({
+      kind: "reply",
+      text: "Done — you won't be billed again, and you have access until Sunday, Aug 17. 🙏",
+      guruQuestion: undefined,
+      actionsTaken: 1,
+    });
+    expect(calls).toEqual([{ name: "cancelMembership", args: undefined }]);
+    const secondBody = model.bodies[1].messages as Record<string, unknown>[];
+    const toolMsg = secondBody.find((m) => m.role === "tool");
+    expect(JSON.parse(toolMsg!.content as string)).toMatchObject({ accessUntil: "Sunday, Aug 17" });
+  });
+
+  it("routes resume_membership to the executor", async () => {
+    const { executor, calls } = fakeExecutor();
+    const model = scriptedModel([
+      { content: null, tool_calls: [toolCall("resume_membership", {})] },
+      { content: "Welcome back — your membership continues as before." },
+    ]);
+    const result = await runCompanionAgent({
+      message: "Actually, keep my subscription going",
+      history: [],
+      snapshot: snapshot(),
+      executor,
+      createCompletion: model.create,
+    });
+    expect(result.kind).toBe("reply");
+    expect(calls).toEqual([{ name: "resumeMembership", args: undefined }]);
   });
 
   it("surfaces executor failures to the model instead of crashing", async () => {

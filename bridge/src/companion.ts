@@ -56,6 +56,15 @@ import type {
   ScheduledDelivery,
 } from "../../lib/types/companion.ts";
 import { PAUSED_INDEFINITELY } from "../../lib/types/companion.ts";
+import {
+  MEMBERSHIP_PRICE_TEXT,
+  billingOf,
+  cancelMembership,
+  resumeMembership,
+  signupLinkFor,
+  userHasMessagingAccess,
+} from "./billing.ts";
+import { hasMessagingAccess } from "../../lib/billing/membership.ts";
 import { DateTime } from "luxon";
 
 // Companion runtime for the bridge: the delivery dispatcher, deterministic
@@ -107,6 +116,7 @@ const engineDeps: EngineDeps = {
   provider: queueProvider,
   clock: systemClock,
   loadPreferences: (userId) => getPreferences(adminDb, userId),
+  hasAccess: (userId) => userHasMessagingAccess(userId),
   renderMessage: async (d) => renderQueuedMessage(d),
   onSent: async (d, result) => {
     await recordOutboundEvent(adminDb, {
@@ -126,6 +136,13 @@ const engineDeps: EngineDeps = {
     if (d.deliveryType === "daily-dharma") await scheduleNextDailyDharma(d.userId);
   },
   onSuppressed: async (d, code) => {
+    // No membership (trial never started, or it ended): the pipeline stops —
+    // resubscribing restarts it — but the user deserves to know why the texts
+    // went quiet, exactly once.
+    if (code === "no-membership") {
+      await sendMembershipLapseNote(d);
+      return;
+    }
     // A guard-blocked send (MESSAGING_SEND_ENABLED off / not allowlisted) must
     // not kill the recurring pipeline: queue the next occurrence so deliveries
     // resume automatically once sending is enabled. Other suppression reasons
@@ -315,6 +332,47 @@ async function scheduleNextDailyDharma(userId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Membership lapse note
+// ---------------------------------------------------------------------------
+
+/**
+ * One-time note when a scheduled teaching is withheld because there's no
+ * active membership (trial never started, or it ended). Sent through the
+ * queue as "transactional" so it isn't itself membership-gated, and guarded
+ * by a user-doc flag so a lapsed member gets exactly one nudge — not one per
+ * suppressed lesson. The Stripe webhook re-arms the flag when a membership
+ * becomes active again.
+ */
+async function sendMembershipLapseNote(d: ScheduledDelivery): Promise<void> {
+  const link = signupLinkFor(d.userId);
+  if (!link) return; // no payment link configured — nothing useful to say
+  const ref = imessageUsersCol().doc(d.userId);
+  const snap = await ref.get();
+  const user = (snap.data() ?? {}) as { membershipEndNoticeSent?: boolean; billing?: unknown };
+  if (user.membershipEndNoticeSent) return;
+  await ref.set({ membershipEndNoticeSent: true, updatedAt: Date.now() }, { merge: true });
+  const billing = billingOf(user);
+  const body =
+    !billing || billing.status === "none"
+      ? `Daily teachings are part of the ${PRODUCT_NAME} membership — ${MEMBERSHIP_PRICE_TEXT}. ` +
+        `Your lessons are ready whenever you are; start your free week here: ${link}`
+      : `Your ${PRODUCT_NAME} membership has ended, so daily teachings are paused — your progress ` +
+        `is saved. Restart anytime: ${link}`;
+  await enqueueDelivery(engineDeps, {
+    userId: d.userId,
+    recipientHandle: d.recipientHandle,
+    recipientChatGuid: d.recipientChatGuid,
+    provider: d.provider,
+    deliveryType: "transactional",
+    scheduledAt: Date.now(),
+    scheduledLocalDate: localDateOf(Date.now(), d.timezone),
+    timezone: d.timezone,
+    variant: "membership-lapse",
+    renderedMessage: body,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Inbound handling: dedup, onboarding, commands
 // ---------------------------------------------------------------------------
 
@@ -341,11 +399,18 @@ interface CompanionUserDoc {
   pendingTimeChange?: boolean;
   savedTeachings?: { programId: string; day: number; title: string }[];
   accountStatus?: string;
+  /** Synced mirror of the Stripe subscription (lib/billing/membership.ts). */
+  billing?: unknown;
+  membershipEndNoticeSent?: boolean;
   [key: string]: unknown;
 }
 
-function obCtx(): OnboardingContext {
-  return { productName: PRODUCT_NAME, defaultTimezone: DEFAULT_TZ };
+function obCtx(userId?: string): OnboardingContext {
+  return {
+    productName: PRODUCT_NAME,
+    defaultTimezone: DEFAULT_TZ,
+    ...(userId ? { signupUrl: signupLinkFor(userId) } : {}),
+  };
 }
 
 async function reply(chatGuid: string, messages: string[]): Promise<void> {
@@ -385,6 +450,7 @@ export async function beginOnboardingV2(
       preferredLocalTime: "07:30",
       createdAt: Date.now(),
     });
+    const signupUrl = signupLinkFor(user.handleId);
     await reply(chatGuid, [
       `Namaste, and welcome! 🙏 I'm your Hindu Guru — a daily learning companion grounded in scripture. ` +
         `I'm trained on the Bhagavad Gita, the Upanishads, the Ramayana and Mahabharata, the Puranas, ` +
@@ -392,6 +458,12 @@ export async function beginOnboardingV2(
         `You can text me any question, anytime: about a verse, a ritual, a festival, or something ` +
         `you've wondered about for years. I can also send one short teaching each day at a time you ` +
         `choose. Reply STOP anytime to opt out.`,
+      ...(signupUrl
+        ? [
+            `${PRODUCT_NAME} is $5 a month with a 1-week free trial, and you can cancel anytime just ` +
+              `by texting me. When you're ready, start your free week here (Apple Pay works): ${signupUrl}`,
+          ]
+        : []),
       "First — what should I call you?",
     ]);
     return;
@@ -400,7 +472,7 @@ export async function beginOnboardingV2(
     { onboardingV2State: "awaiting-consent", chatGuid, updatedAt: Date.now() },
     { merge: true }
   );
-  await reply(chatGuid, [welcomeMessage(obCtx())]);
+  await reply(chatGuid, [welcomeMessage(obCtx(user.handleId))]);
 }
 
 export interface CompanionInboundResult {
@@ -428,7 +500,7 @@ export async function handleCompanionInbound(
   // Onboarding v2 in progress.
   const obState = user.onboardingV2State;
   if (obState && obState !== "completed") {
-    const result = stepOnboarding(obState, text, obCtx());
+    const result = stepOnboarding(obState, text, obCtx(user.handleId));
     if (result.deflected) {
       // Real question mid-onboarding: let RAG answer, then re-prompt.
       await userRef.set({ onboardingV2State: result.nextState }, { merge: true });
@@ -527,9 +599,37 @@ async function buildAgentSnapshot(user: CompanionUserDoc): Promise<CompanionAgen
     }
   }
 
+  const billing = billingOf(user);
+  const now = Date.now();
+  let membershipState: CompanionAgentSnapshot["membership"]["state"];
+  if (!billing || billing.status === "none") membershipState = "none";
+  else if (billing.status === "past_due") membershipState = "past-due";
+  else if (billing.status === "canceled")
+    membershipState = hasMessagingAccess(billing, now) ? "canceling" : "ended";
+  else if (billing.cancelAtPeriodEnd) membershipState = "canceling";
+  else membershipState = billing.status === "trialing" ? "trial" : "active";
+  const accessUntilText = billing?.accessUntil
+    ? DateTime.fromMillis(billing.accessUntil, { zone: tz }).toFormat("cccc, LLL d")
+    : undefined;
+
   const pausedUntil = prefs?.pausedUntil ?? null;
   const paused = pausedUntil !== null && pausedUntil > Date.now();
   return {
+    membership: {
+      state: membershipState,
+      priceText: MEMBERSHIP_PRICE_TEXT,
+      ...(membershipState === "canceling" || membershipState === "ended"
+        ? { accessUntilText }
+        : {}),
+      ...(membershipState === "trial" || membershipState === "active"
+        ? { renewsText: accessUntilText }
+        : {}),
+      // The signup link is only surfaced when a fresh checkout is the right
+      // fix — handing it to an active member invites a duplicate subscription.
+      ...(membershipState === "none" || membershipState === "ended"
+        ? { signupUrl: signupLinkFor(user.handleId) ?? undefined }
+        : {}),
+    },
     productName: PRODUCT_NAME,
     userName: user.displayName,
     consentGranted: prefs?.consentStatus === "granted",
@@ -840,6 +940,16 @@ function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
       };
     },
 
+    async cancelMembership() {
+      const prefs = await getPreferences(adminDb, userId);
+      return cancelMembership(userId, prefs?.timezone ?? DEFAULT_TZ);
+    },
+
+    async resumeMembership() {
+      const prefs = await getPreferences(adminDb, userId);
+      return resumeMembership(userId, prefs?.timezone ?? DEFAULT_TZ);
+    },
+
     async getLessonContent({ programSlug }) {
       const lesson = await lastDeliveredLesson(userId, programSlug);
       if (!lesson) return { error: "no-lesson-delivered-yet" };
@@ -869,7 +979,7 @@ function queueReprompt(userId: string, chatGuid: string, state: OnboardingState)
     userId,
     setTimeout(() => {
       repromptTimers.delete(userId);
-      const prompt = currentPrompt(state, obCtx());
+      const prompt = currentPrompt(state, obCtx(userId));
       if (prompt) void reply(chatGuid, [`Back to getting you set up:\n\n${prompt}`]);
     }, 20_000)
   );
@@ -945,12 +1055,22 @@ async function finishOnboarding(
   const prefs = await getPreferences(adminDb, user.handleId);
   if (!prefs) return;
 
+  // Fresh read — they may have finished Stripe checkout mid-onboarding.
+  const latest = (await imessageUsersCol().doc(user.handleId).get()).data() ?? {};
+  const signupUrl = signupLinkFor(user.handleId);
+  const trialNudge =
+    !hasMessagingAccess(billingOf(latest as { billing?: unknown }), Date.now()) && signupUrl
+      ? `One more thing: daily texts begin once your free week is active — ` +
+        `${MEMBERSHIP_PRICE_TEXT}. Start here (Apple Pay works): ${signupUrl}`
+      : null;
+
   if (opts.selectedProgram === "daily-dharma") {
     await savePreferences(adminDb, user.handleId, { dailyDharmaEnabled: true });
     await scheduleNextDailyDharma(user.handleId);
     await reply(chatGuid, [
       `You're set: one Daily Dharma teaching at ${formatPrefTime(prefs)} each day. ` +
         `Reply PAUSE, STOP, or CHANGE TIME anytime, and ask me questions whenever you like.`,
+      ...(trialNudge ? [trialNudge] : []),
     ]);
     return;
   }
@@ -981,6 +1101,7 @@ async function finishOnboarding(
     : `Day 1 arrives tomorrow at ${formatPrefTime(prefs)}`;
   await reply(chatGuid, [
     `You're enrolled in ${program.title}. ${when}. Reply PAUSE, STOP, or CHANGE TIME anytime — and you can ask me any question between lessons.`,
+    ...(trialNudge ? [trialNudge] : []),
   ]);
 }
 
@@ -1015,8 +1136,18 @@ async function handleCommand(
       });
       const canceled = await cancelPendingDeliveries(engineDeps, userId);
       log.info(`STOP from ${userId}: canceled ${canceled} pending deliveries`);
+      // Opting out of texts and canceling billing are different things — a
+      // paying member who texts STOP must be told their membership is intact.
+      const billing = billingOf(user);
+      const stillBilling =
+        billing !== null &&
+        (billing.status === "trialing" || billing.status === "active") &&
+        !billing.cancelAtPeriodEnd;
       await reply(chatGuid, [
-        "You're opted out — no more scheduled messages. Your progress is saved. Reply START anytime to opt back in.",
+        "You're opted out — no more scheduled messages. Your progress is saved. Reply START anytime to opt back in." +
+          (stillBilling
+            ? " Heads up: your $5/month membership is still active. If you'd like to cancel that too, text me “cancel my membership”."
+            : ""),
       ]);
       return;
     }

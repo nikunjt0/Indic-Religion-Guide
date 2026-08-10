@@ -49,6 +49,17 @@ export interface CompanionAgentSnapshot {
   }[];
   /** e.g. "Monday, Aug 10, 11:20 AM CDT" in the user's timezone. */
   localNowText?: string;
+  membership: {
+    state: "none" | "trial" | "active" | "canceling" | "past-due" | "ended";
+    /** e.g. "$5/month with a 1-week free trial — cancel anytime". */
+    priceText: string;
+    /** Last day of access (canceling/ended), e.g. "Sunday, Aug 17". */
+    accessUntilText?: string;
+    /** Trial-end / next renewal date (trial/active), e.g. "Sunday, Aug 17". */
+    renewsText?: string;
+    /** Their personal checkout URL for starting or restarting membership. */
+    signupUrl?: string;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -69,6 +80,10 @@ export interface CompanionToolExecutor {
   skipTodaysLesson(args: { programSlug?: string }): Promise<unknown>;
   optOut(): Promise<unknown>;
   getLessonContent(args: { programSlug?: string }): Promise<unknown>;
+  /** Cancel the paid membership at period end (access continues until then). */
+  cancelMembership(): Promise<unknown>;
+  /** Undo a pending cancellation so the membership renews again. */
+  resumeMembership(): Promise<unknown>;
 }
 
 export type CompanionAgentResult =
@@ -114,6 +129,37 @@ export function buildCompanionSystemPrompt(s: CompanionAgentSnapshot): string {
         : "off"
     }`
   );
+  const m = s.membership;
+  switch (m.state) {
+    case "trial":
+      account.push(
+        `Membership: free trial${m.renewsText ? ` — first charge on ${m.renewsText}` : ""}`
+      );
+      break;
+    case "active":
+      account.push(`Membership: active${m.renewsText ? ` — renews on ${m.renewsText}` : ""}`);
+      break;
+    case "canceling":
+      account.push(
+        `Membership: canceled — billing has stopped, but access and daily texts continue until ${m.accessUntilText ?? "the end of the paid period"}`
+      );
+      break;
+    case "past-due":
+      account.push(
+        "Membership: payment problem (their card was declined at renewal) — scheduled teachings are on hold until the payment goes through"
+      );
+      break;
+    case "ended":
+      account.push(
+        `Membership: ended${m.accessUntilText ? ` on ${m.accessUntilText}` : ""} — they'd need to restart it to receive scheduled teachings`
+      );
+      break;
+    case "none":
+      account.push(
+        "Membership: not started yet — scheduled teachings begin once they start their free trial"
+      );
+      break;
+  }
 
   const catalog = s.catalog
     .map((p) => `- ${p.slug}: "${p.title}", ${p.durationDays} days. ${p.description}`)
@@ -128,6 +174,12 @@ You have real tools that change their account. When they ask you to set somethin
 They can be enrolled in several programs at the same time, and each program — and Daily Dharma — can have its own delivery time. "Add the Gita one at 7am" means enroll with time 7am, leaving their other programs untouched. change_delivery_time takes a target: one program, daily-dharma, or all.
 
 Answer every part of their message. If they ask two things, address both.
+
+MEMBERSHIP AND BILLING — ${m.priceText}:
+${m.signupUrl ? `- Their personal signup link (share it whenever they want to start or restart the membership, or ask how to pay): ${m.signupUrl} — it opens a secure checkout where they add a card (Apple Pay works). Nothing is charged during the free week, and they can cancel anytime just by texting you.\n` : ""}- CANCELING: when they say anything like "cancel my subscription", "I want to stop paying", or "end my membership" — do NOT cancel yet. First ask one short confirmation question ("Are you sure? …"), mentioning that they'd keep everything until ${m.accessUntilText ?? m.renewsText ?? "the end of the period they've already paid for"}. Call cancel_membership ONLY after they clearly confirm. Then tell them it's done and give the exact last day of access from the tool result. If they hesitate, decline, or are ambiguous, don't cancel — answer their concerns instead.
+- Canceling stops future billing; their access and daily texts continue until the date the tool returns. Reassure them of that.
+- If they canceled and change their mind before access ends, call resume_membership — billing resumes and nothing is lost. Once a membership has fully ended (or never started), there is no tool: share the signup link instead.
+- Pausing messages or opting out of texts does NOT stop billing — only canceling the membership does. If they want to stop paying, that's a cancellation.
 
 If any part of the message is a question about Hindu scripture, practice, philosophy, ritual, festivals, or Ayurveda — teaching content rather than their account — call answer_scripture_question with that part. A scripture-grounded answer with citations is sent separately; do not answer content questions yourself.
 
@@ -300,6 +352,24 @@ function buildTools(catalogSlugs: string[]) {
     {
       type: "function",
       function: {
+        name: "cancel_membership",
+        description:
+          "Cancel the user's paid membership at the end of the current period — billing stops, access continues until that date. Call ONLY after the user has explicitly confirmed a cancellation you asked them about (\"Are you sure?\" → \"yes\"). Never call it on the first mention of canceling.",
+        parameters: { type: "object", additionalProperties: false, properties: {} },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "resume_membership",
+        description:
+          "Undo a pending cancellation so the membership renews again. Only works while their access is still active; after it fully ends they must use their signup link.",
+        parameters: { type: "object", additionalProperties: false, properties: {} },
+      },
+    },
+    {
+      type: "function",
+      function: {
         name: "answer_scripture_question",
         description:
           "Hand a scripture/practice/philosophy/Ayurveda question to the citation-grounded guru pipeline. Pass the question part of the user's message, reworded to stand alone.",
@@ -380,6 +450,10 @@ async function executeTool(
       return exec.optOut();
     case "get_lesson_content":
       return exec.getLessonContent({ programSlug: str("program_slug") });
+    case "cancel_membership":
+      return exec.cancelMembership();
+    case "resume_membership":
+      return exec.resumeMembership();
     default:
       return { error: `unknown tool: ${name}` };
   }
