@@ -33,6 +33,11 @@ export const COMPANION_AGENT_MODEL = process.env.COMPANION_AGENT_MODEL ?? CHAT_M
 // model: stronger visual reasoning and a large context window for the keyframe
 // sequences a video expands into.
 export const VISION_CHAT_MODEL = "gpt-4.1";
+// Follow-up condenser (lib/rag/condense.ts): rewrites a follow-up into a
+// standalone retrieval question. A mechanical rewrite, not a user-facing
+// answer, so the mini tier is fine here — the "no minis" note on CHAT_MODEL
+// is about composing the Guru's reply.
+export const CONDENSE_MODEL = "gpt-4.1-mini";
 // Speech-to-text model for audio attachments and the audio track lifted out
 // of videos. gpt-4o-transcribe supersedes whisper-1 with better accuracy on
 // accented English, Sanskrit terms, and noisy ritual recordings.
