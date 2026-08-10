@@ -34,8 +34,11 @@ export default function Home() {
         </div>
         <div className="flex flex-col items-center gap-2">
           <p className="text-sm text-foreground/80">
-            Text <strong className="font-semibold text-maroon">GURU</strong> to
-            the bridge number to begin.
+            Text <strong className="font-semibold text-maroon">GURU</strong> to{" "}
+            <strong className="font-semibold text-maroon">
+              hinduguru@icloud.com
+            </strong>{" "}
+            to begin.
           </p>
           <p className="text-xs text-muted">
             You&rsquo;ll be asked a few questions, then you can ask anything.
