@@ -5,6 +5,10 @@ import { splitForSms } from "./format.ts";
 import { sendSegments } from "./bluebubbles.ts";
 import { parseCommand, type Command } from "../../lib/commands/router.ts";
 import {
+  routeCompanionToolIntent,
+  type CompanionToolIntent,
+} from "../../lib/commands/tool-router.ts";
+import {
   currentPrompt,
   stepOnboarding,
   welcomeMessage,
@@ -442,9 +446,78 @@ export async function handleCompanionInbound(
   }
 
   const cmd = parseCommand(text);
+  if (cmd && cmd.kind !== "change-time") {
+    await handleCommand(user, chatGuid, cmd);
+    return true;
+  }
+
+  const toolIntent = await routeAccountToolIntent(text);
+  if (toolIntent.kind !== "none") {
+    await handleToolIntent(user, chatGuid, toolIntent);
+    return true;
+  }
+
   if (!cmd) return false;
   await handleCommand(user, chatGuid, cmd);
   return true;
+}
+
+async function routeAccountToolIntent(text: string): Promise<CompanionToolIntent> {
+  try {
+    return await routeCompanionToolIntent(text);
+  } catch (err) {
+    log.error("account tool routing failed:", err);
+    return { kind: "none" };
+  }
+}
+
+async function handleToolIntent(
+  user: CompanionUserDoc,
+  chatGuid: string,
+  intent: CompanionToolIntent
+): Promise<void> {
+  switch (intent.kind) {
+    case "change-time": {
+      const parsed = parseUserTimeInputDetailed(intent.timeText);
+      if (parsed?.needsMeridiem) {
+        await imessageUsersCol()
+          .doc(user.handleId)
+          .set({ pendingTimeChange: true }, { merge: true });
+        await reply(chatGuid, [
+          "Please include AM or PM for that delivery time, like “6:25 PM”.",
+        ]);
+        return;
+      }
+      if (parsed) {
+        await imessageUsersCol()
+          .doc(user.handleId)
+          .set({ pendingTimeChange: false }, { merge: true });
+        await changeDeliveryTime(user, chatGuid, parsed.time);
+        return;
+      }
+      await imessageUsersCol()
+        .doc(user.handleId)
+        .set({ pendingTimeChange: true }, { merge: true });
+      await reply(chatGuid, [
+        "What time should your messages arrive? You can say “7:30 AM” or “after dinner”.",
+      ]);
+      return;
+    }
+    case "start-change-time-flow": {
+      await imessageUsersCol()
+        .doc(user.handleId)
+        .set({ pendingTimeChange: true }, { merge: true });
+      await reply(chatGuid, [
+        "What time should your messages arrive? You can say “7:30 AM” or “after dinner”.",
+      ]);
+      return;
+    }
+    case "show-time":
+      await handleCommand(user, chatGuid, { kind: "time" });
+      return;
+    case "none":
+      return;
+  }
 }
 
 const repromptTimers = new Map<string, NodeJS.Timeout>();

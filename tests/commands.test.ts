@@ -43,6 +43,16 @@ describe("parseCommand", () => {
       time: "18:25",
       needsMeridiem: false,
     });
+    expect(parseCommand("Can you reschedule the daily message for 7:15pm")).toEqual({
+      kind: "change-time",
+      time: "19:15",
+      needsMeridiem: false,
+    });
+    expect(parseCommand("What no I'm talking about changing the daily text you send for Hinduism 101")).toEqual({
+      kind: "change-time",
+      time: undefined,
+      needsMeridiem: undefined,
+    });
     expect(parseCommand("No my scheduled time for the daily text.")).toEqual({
       kind: "change-time",
       time: undefined,
@@ -63,6 +73,7 @@ describe("parseCommand", () => {
     expect(parseCommand("can I pause my puja during travel?")).toBeNull();
     expect(parseCommand("what is the source of the Gita?")).toBeNull();
     expect(parseCommand("how do I start a daily practice")).toBeNull();
+    expect(parseCommand("can I schedule my daily puja for 7pm?")).toBeNull();
   });
 
   it("returns null for empty / free-form text", () => {

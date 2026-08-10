@@ -60,6 +60,10 @@ const EXACT: Record<string, Command> = {
   "change delivery time": { kind: "change-time" },
   "change scheduled time": { kind: "change-time" },
   "change schedule": { kind: "change-time" },
+  reschedule: { kind: "change-time" },
+  "reschedule messages": { kind: "change-time" },
+  "reschedule daily message": { kind: "change-time" },
+  "reschedule daily teaching": { kind: "change-time" },
   programs: { kind: "programs" },
   "my program": { kind: "my-program" },
   restart: { kind: "restart" },
@@ -84,11 +88,16 @@ const EXACT: Record<string, Command> = {
 };
 
 function parseNaturalTimeChange(t: string, raw: string): Command | null {
-  const hasChangeVerb = /\b(change|switch|set|move|update|shift|adjust|make)\b/.test(t);
+  const hasChangeVerb =
+    /\b(change|changing|switch|set|move|update|shift|adjust|make|reschedule|rescheduling)\b/.test(
+      t
+    );
   const hasDirectTimeChangePhrase =
-    /\b(change|switch|set|move|update|shift|adjust)\s+(?:my\s+)?time\b/.test(t);
+    /\b(change|changing|switch|set|move|update|shift|adjust|reschedule|rescheduling)\s+(?:my\s+)?time\b/.test(
+      t
+    );
   const hasDeliveryTarget =
-    /\b(delivery|deliveries|scheduled|schedule|daily|lesson|lessons|message|messages|text|texts|teaching|teachings)\b/.test(
+    /\b(delivery|deliveries|scheduled\s+time|message|messages|text|texts|teaching|teachings|lesson|lessons|course|program|hinduism\s+101)\b/.test(
       t
     ) || /\bmy\s+time\b/.test(t);
   const isCorrection = /^no\s+my\s+scheduled\s+time\b/.test(t);
