@@ -13,6 +13,7 @@ import {
   signupLinkFor,
   type StripeSubscription,
 } from "../lib/billing/stripe";
+import { membershipStartedBody } from "../lib/billing/notify";
 import { verifyStripeSignature } from "../lib/billing/webhook";
 
 const NOW = Date.UTC(2026, 7, 10, 12, 0, 0);
@@ -157,6 +158,47 @@ describe("stripe projection", () => {
       if (prev === undefined) delete process.env.STRIPE_PAYMENT_LINK_URL;
       else process.env.STRIPE_PAYMENT_LINK_URL = prev;
     }
+  });
+});
+
+describe("membershipStartedBody", () => {
+  it("asks what they want to learn when no plan exists yet", () => {
+    const body = membershipStartedBody({
+      trialing: true,
+      firstChargeDay: "Sunday, Aug 17",
+      hasLessonPlan: false,
+      onboardingInProgress: false,
+    });
+    expect(body).toContain("Your free week is underway");
+    expect(body).toContain("the first $5 charge comes on Sunday, Aug 17");
+    expect(body).toContain("What would you like to learn about");
+    expect(body).toContain("I'll set up your daily lessons");
+    // The cancel-instruction tail was removed on request.
+    expect(body).toContain("You can cancel anytime just by texting me.");
+    expect(body).not.toContain("cancel my membership");
+    expect(body).not.toContain("keep access through");
+  });
+
+  it("confirms existing lessons instead of re-asking for interests", () => {
+    const body = membershipStartedBody({
+      trialing: true,
+      firstChargeDay: null,
+      hasLessonPlan: true,
+      onboardingInProgress: false,
+    });
+    expect(body).toContain("Your daily lessons continue as scheduled");
+    expect(body).not.toContain("What would you like to learn about");
+  });
+
+  it("points a mid-onboarding user back to the pending setup question", () => {
+    const body = membershipStartedBody({
+      trialing: false,
+      hasLessonPlan: false,
+      onboardingInProgress: true,
+    });
+    expect(body).toContain("membership is active");
+    expect(body).toContain("finish getting you set up");
+    expect(body).not.toContain("What would you like to learn about");
   });
 });
 
