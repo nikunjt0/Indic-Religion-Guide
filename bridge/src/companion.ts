@@ -389,6 +389,24 @@ async function sendMembershipLapseNote(d: ScheduledDelivery): Promise<void> {
   });
 }
 
+/**
+ * One-line signup reminder for confirmations that promise future deliveries
+ * (START, RESUME, enrollments): without an active membership those sends
+ * would be quietly suppressed at dispatch time, so the promise must carry
+ * the fix. Fresh doc read, so a just-finished checkout or a flipped
+ * freeTestingUser flag is honored. Null when access is fine or when no
+ * payment link is configured.
+ */
+async function membershipNudgeLine(userId: string): Promise<string | null> {
+  if (await userHasMessagingAccess(userId)) return null;
+  const link = signupLinkFor(userId);
+  if (!link) return null;
+  return (
+    `Quick heads up: your teachings won't be delivered until your membership is active — ` +
+    `${MEMBERSHIP_PRICE_TEXT}. Start here (Apple Pay works): ${link}`
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Inbound handling: dedup, onboarding, commands
 // ---------------------------------------------------------------------------
@@ -724,6 +742,27 @@ function parseTimeArg(timeText: string): { time: string } | { error: string; not
 function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
   const userId = user.handleId;
 
+  /**
+   * Tools that promise scheduled sends get a membershipWarning attached when
+   * the dispatcher would actually suppress those sends — the model then tells
+   * the user and shares the signup link instead of confirming a delivery that
+   * will never arrive. Error results pass through untouched.
+   */
+  const withMembershipWarning = async (result: unknown): Promise<unknown> => {
+    if (!result || typeof result !== "object") return result;
+    if ("error" in (result as Record<string, unknown>)) return result;
+    if (await userHasMessagingAccess(userId)) return result;
+    const link = signupLinkFor(userId);
+    if (!link) return result;
+    return {
+      ...(result as Record<string, unknown>),
+      membershipWarning:
+        `IMPORTANT: their membership is NOT active, so these scheduled texts will not actually ` +
+        `be delivered until they start it (${MEMBERSHIP_PRICE_TEXT}). Say that plainly and ` +
+        `share their signup link: ${link}`,
+    };
+  };
+
   /** Pick the enrollment a program-scoped tool call refers to. */
   const resolveEnrollment = async (
     programSlug?: string
@@ -747,7 +786,7 @@ function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
     };
   };
 
-  return {
+  const base: CompanionToolExecutor = {
     async enrollInProgram({ programSlug, time }) {
       const prefs = await getPreferences(adminDb, userId);
       if (!prefs || prefs.consentStatus !== "granted") return NOT_SET_UP;
@@ -994,6 +1033,22 @@ function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
       };
     },
   };
+
+  const promisesDeliveries: (keyof CompanionToolExecutor)[] = [
+    "enrollInProgram",
+    "enableDailyDharma",
+    "changeDeliveryTime",
+    "resumeMessages",
+    "restartProgram",
+    "skipTodaysLesson",
+  ];
+  for (const key of promisesDeliveries) {
+    const original = base[key] as (...args: unknown[]) => Promise<unknown>;
+    (base as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>)[key] = (
+      ...args: unknown[]
+    ) => original(...args).then(withMembershipWarning);
+  }
+  return base;
 }
 
 const repromptTimers = new Map<string, NodeJS.Timeout>();
@@ -1191,15 +1246,22 @@ async function handleCommand(
         });
       }
       const rescheduled = await rescheduleAllActive(user, cmd.immediate);
+      // A START without an active membership must not promise deliveries the
+      // dispatcher will suppress — pair the welcome with the signup link.
+      const nudge = await membershipNudgeLine(userId);
       if (rescheduled.length > 0) {
         const lines = rescheduled
           .map((r) => `${r.programTitle} from day ${r.day}`)
           .join(" and ");
-        await reply(chatGuid, [`Welcome back — continuing ${lines}.`]);
+        await reply(chatGuid, [
+          `Welcome back — continuing ${lines}.${nudge ? `\n\n${nudge}` : ""}`,
+        ]);
       } else if (prefs?.dailyDharmaEnabled) {
         await savePreferences(adminDb, userId, { enabled: true, pausedUntil: null });
         await scheduleNextDailyDharma(userId);
-        await reply(chatGuid, ["Welcome back — Daily Dharma resumes at your usual time."]);
+        await reply(chatGuid, [
+          `Welcome back — Daily Dharma resumes at your usual time.${nudge ? `\n\n${nudge}` : ""}`,
+        ]);
       } else {
         await beginOnboardingV2(user, chatGuid);
       }
@@ -1226,15 +1288,19 @@ async function handleCommand(
       await savePreferences(adminDb, userId, { pausedUntil: null, pauseReason: "" });
       const resumed = await rescheduleAllActive(user, false);
       if (prefs?.dailyDharmaEnabled) await scheduleNextDailyDharma(userId);
+      const resumeNudge = await membershipNudgeLine(userId);
       if (resumed.length > 0) {
         const lines = resumed
           .map((r) => `${r.programTitle} day ${r.day} arrives ${r.when}`)
           .join("; ");
         await reply(chatGuid, [
-          `Resumed — ${lines}. We continue from where you paused; no missed-lesson pile-up.`,
+          `Resumed — ${lines}. We continue from where you paused; no missed-lesson pile-up.` +
+            (resumeNudge ? `\n\n${resumeNudge}` : ""),
         ]);
       } else if (prefs?.dailyDharmaEnabled) {
-        await reply(chatGuid, ["Resumed — Daily Dharma returns at your usual time."]);
+        await reply(chatGuid, [
+          `Resumed — Daily Dharma returns at your usual time.${resumeNudge ? `\n\n${resumeNudge}` : ""}`,
+        ]);
       } else {
         await reply(chatGuid, ["Nothing to resume yet. Reply START to begin, or PROGRAMS to browse."]);
       }
