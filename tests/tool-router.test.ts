@@ -26,6 +26,78 @@ describe("companion tool router", () => {
     ).toEqual({ kind: "start-change-time-flow" });
   });
 
+  it("maps program setup tool calls to companion intents", () => {
+    expect(
+      intentFromToolCall({
+        type: "function",
+        function: { name: "list_programs", arguments: "{}" },
+      })
+    ).toEqual({ kind: "list-programs" });
+    expect(
+      intentFromToolCall({
+        type: "function",
+        function: {
+          name: "enroll_in_program",
+          arguments: JSON.stringify({ program: "Hinduism 101" }),
+        },
+      })
+    ).toEqual({ kind: "enroll", programText: "Hinduism 101" });
+    expect(
+      intentFromToolCall({
+        type: "function",
+        function: { name: "show_my_program", arguments: "{}" },
+      })
+    ).toEqual({ kind: "show-my-program" });
+    expect(
+      intentFromToolCall({
+        type: "function",
+        function: { name: "show_app_help", arguments: "{}" },
+      })
+    ).toEqual({ kind: "show-help" });
+  });
+
+  it("falls back to the program list when enrollment names no program", () => {
+    expect(
+      intentFromToolCall({
+        type: "function",
+        function: { name: "enroll_in_program", arguments: JSON.stringify({ program: " " }) },
+      })
+    ).toEqual({ kind: "list-programs" });
+  });
+
+  it("offers program tools so enrollment questions stay in-app", async () => {
+    const seenBodies: Record<string, unknown>[] = [];
+    const intent = await routeCompanionToolIntent(
+      "What are other programs I can enroll in for daily messages",
+      async (body) => {
+        seenBodies.push(body);
+        return {
+          choices: [
+            {
+              message: {
+                tool_calls: [
+                  { type: "function", function: { name: "list_programs", arguments: "{}" } },
+                ],
+              },
+            },
+          ],
+        };
+      }
+    );
+
+    expect(intent).toEqual({ kind: "list-programs" });
+    const tools = seenBodies[0]?.tools as { function: { name: string } }[];
+    const names = tools.map((t) => t.function.name);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "list_programs",
+        "enroll_in_program",
+        "show_my_program",
+        "show_app_help",
+      ])
+    );
+  });
+
   it("returns none when the model calls no account-action tool", async () => {
     const intent = await routeCompanionToolIntent(
       "can I schedule my daily puja for 7pm?",

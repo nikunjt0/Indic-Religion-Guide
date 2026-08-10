@@ -28,7 +28,9 @@ import {
   advanceEnrollment,
   lessonForDay,
   newEnrollment,
+  resolveProgramChoice,
   scheduleCurrentLesson,
+  type ProgramChoice,
   type ProgramWithLessons,
 } from "../../lib/programs/engine.ts";
 import { loadAllProgramFiles } from "../../lib/programs/content.ts";
@@ -451,6 +453,17 @@ export async function handleCompanionInbound(
     return true;
   }
 
+  // The whole message is a program name or slug ("HINDUISM-101", "Daily
+  // Dharma") — the PROGRAMS list invites exactly this reply, so it must work
+  // deterministically, without an LLM.
+  if (!cmd) {
+    const choice = resolveProgramChoice(text, [...programs().values()]);
+    if (choice && choice.kind !== "ambiguous") {
+      await enrollFromChoice(user, chatGuid, choice);
+      return true;
+    }
+  }
+
   const toolIntent = await routeAccountToolIntent(text);
   if (toolIntent.kind !== "none") {
     await handleToolIntent(user, chatGuid, toolIntent);
@@ -515,9 +528,115 @@ async function handleToolIntent(
     case "show-time":
       await handleCommand(user, chatGuid, { kind: "time" });
       return;
+    case "list-programs":
+      await handleCommand(user, chatGuid, { kind: "programs" });
+      return;
+    case "show-my-program":
+      await handleCommand(user, chatGuid, { kind: "my-program" });
+      return;
+    case "show-help":
+      await handleCommand(user, chatGuid, { kind: "help" });
+      return;
+    case "enroll": {
+      const choice = resolveProgramChoice(intent.programText, [...programs().values()], {
+        fuzzy: true,
+      });
+      if (!choice) {
+        await reply(chatGuid, [
+          `I couldn't match “${intent.programText}” to one of our programs.`,
+        ]);
+        await handleCommand(user, chatGuid, { kind: "programs" });
+        return;
+      }
+      if (choice.kind === "ambiguous") {
+        const options = choice.slugs
+          .map((slug) => (slug === "daily-dharma" ? "Daily Dharma" : getProgram(slug)?.title ?? slug))
+          .join(", ");
+        await reply(chatGuid, [
+          `A few of our programs match that — did you mean: ${options}? Reply with the full name.`,
+        ]);
+        return;
+      }
+      await enrollFromChoice(user, chatGuid, choice);
+      return;
+    }
     case "none":
       return;
   }
+}
+
+/**
+ * Enroll (or switch) an already-onboarded user into a program or Daily Dharma
+ * from a plain text request — the companion equivalent of the onboarding
+ * program-selection step. Users without granted consent are routed into the
+ * consent-first onboarding instead.
+ */
+async function enrollFromChoice(
+  user: CompanionUserDoc,
+  chatGuid: string,
+  choice: Exclude<ProgramChoice, { kind: "ambiguous" }>
+): Promise<void> {
+  const prefs = await getPreferences(adminDb, user.handleId);
+  if (!prefs || prefs.consentStatus !== "granted") {
+    await reply(chatGuid, ["Happy to set that up — let's get you started first."]);
+    await beginOnboardingV2(user, chatGuid);
+    return;
+  }
+
+  if (choice.kind === "daily-dharma") {
+    if (prefs.dailyDharmaEnabled) {
+      await reply(chatGuid, [
+        `Daily Dharma is already on — one teaching each day at ${formatPrefTime(prefs)}. Reply CHANGE TIME to adjust it.`,
+      ]);
+      return;
+    }
+    await savePreferences(adminDb, user.handleId, { dailyDharmaEnabled: true });
+    await scheduleNextDailyDharma(user.handleId);
+    await reply(chatGuid, [
+      `You're set: one Daily Dharma teaching at ${formatPrefTime(prefs)} each day. ` +
+        `Reply PAUSE, STOP, or CHANGE TIME anytime.`,
+    ]);
+    return;
+  }
+
+  const program = getProgram(choice.slug);
+  if (!program) {
+    await reply(chatGuid, ["I couldn't find that program — reply PROGRAMS to see the list."]);
+    return;
+  }
+
+  const active = await getActiveEnrollment(adminDb, user.handleId);
+  if (active?.programId === program.slug) {
+    await reply(chatGuid, [
+      `You're already in ${program.title} — day ${active.currentDay} of ${program.durationDays}. ` +
+        `Reply RESTART to start it over, or PROGRAMS to browse.`,
+    ]);
+    return;
+  }
+  if (active) {
+    await saveEnrollment(adminDb, { ...active, status: "canceled", updatedAt: Date.now() });
+    await cancelPendingDeliveries(engineDeps, user.handleId, ["program-lesson"]);
+  }
+
+  const enrollment = newEnrollment({
+    userId: user.handleId,
+    program,
+    nowMs: Date.now(),
+    source: "conversation",
+  });
+  await saveEnrollment(adminDb, enrollment);
+  const res = await rescheduleActive(user, false);
+  const switchNote = active ? `Switched from ${getProgram(active.programId)?.title ?? active.programId}. ` : "";
+  if (!res) {
+    await reply(chatGuid, [
+      `${switchNote}You're enrolled in ${program.title}, but I couldn't confirm the first lesson in the delivery queue. Reply MY PROGRAM in a minute to check.`,
+    ]);
+    return;
+  }
+  await reply(chatGuid, [
+    `${switchNote}You're enrolled in ${program.title} — ${program.durationDays} days, one text a day. ` +
+      `Day ${res.day} arrives ${res.when}. Reply PAUSE, STOP, or CHANGE TIME anytime.`,
+  ]);
 }
 
 const repromptTimers = new Map<string, NodeJS.Timeout>();
@@ -791,7 +910,8 @@ async function handleCommand(
         .map((p) => `• ${p.title} (${p.durationDays} days) — reply ${p.slug.toUpperCase()}`)
         .join("\n");
       await reply(chatGuid, [
-        `Programs:\n${list}\n• Daily Dharma — one standalone teaching a day (reply DAILY DHARMA)`,
+        `Programs:\n${list}\n• Daily Dharma — one standalone teaching a day (reply DAILY DHARMA)\n` +
+          `Reply with the one you'd like and I'll set it up.`,
       ]);
       return;
     }
