@@ -54,6 +54,28 @@ describe("hasMessagingAccess", () => {
     expect(hasMessagingAccess(canceled, NOW + DAY + 1)).toBe(false);
   });
 
+  it("expires a canceled membership by timestamp even without the deletion webhook", () => {
+    // Stripe still says active/trialing (the deleted event was missed), but
+    // the user canceled and the period end has passed — access must lapse.
+    const staleActive = billing({
+      status: "active",
+      cancelAtPeriodEnd: true,
+      accessUntil: NOW - 1,
+    });
+    expect(hasMessagingAccess(staleActive, NOW)).toBe(false);
+    const staleTrial = billing({
+      status: "trialing",
+      cancelAtPeriodEnd: true,
+      accessUntil: NOW - 1,
+    });
+    expect(hasMessagingAccess(staleTrial, NOW)).toBe(false);
+    // A renewing membership is never cut off by a stale accessUntil — missed
+    // renewal webhooks must not lock out a paying member.
+    expect(
+      hasMessagingAccess(billing({ status: "active", accessUntil: NOW - DAY }), NOW)
+    ).toBe(true);
+  });
+
   it("denies past_due until payment recovers", () => {
     expect(hasMessagingAccess(billing({ status: "past_due" }), NOW)).toBe(false);
   });
