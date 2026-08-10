@@ -471,8 +471,12 @@ export async function beginOnboardingV2(
 ): Promise<void> {
   const openerCmd = parseCommand(initialText);
   if (openerCmd?.kind === "start") {
+    // Someone we already know by name shouldn't be marched through the
+    // questionnaire again — consent is granted and the conversational agent
+    // takes it from here.
+    const nextState = user.displayName ? "completed" : "awaiting-name";
     await imessageUsersCol().doc(user.handleId).set(
-      { onboardingV2State: "awaiting-name", chatGuid, updatedAt: Date.now() },
+      { onboardingV2State: nextState, chatGuid, updatedAt: Date.now() },
       { merge: true }
     );
     await savePreferences(adminDb, user.handleId, {
@@ -503,7 +507,10 @@ export async function beginOnboardingV2(
               `by texting me. When you're ready, start your free week here (Apple Pay works): ${signupUrl}`,
           ]
         : []),
-      "First — what should I call you?",
+      nextState === "awaiting-name"
+        ? "First — what should I call you?"
+        : `Good to have you back, ${user.displayName}! Tell me what you'd like — daily teachings, ` +
+          `a program, or any question — and I'll set you up.`,
     ]);
     return;
   }
@@ -541,20 +548,31 @@ export async function handleCompanionInbound(
   const obState = user.onboardingV2State;
   if (obState && obState !== "completed") {
     const result = stepOnboarding(obState, text, obCtx(user));
-    if (result.deflected) {
-      // Real question mid-onboarding: let RAG answer, then re-prompt.
-      await userRef.set({ onboardingV2State: result.nextState }, { merge: true });
-      queueReprompt(user, chatGuid, result.nextState);
-      return { handled: false };
+    // At the consent gate, anything that isn't a plain yes/START/STOP falls
+    // through to the conversational agent below: "set me up with daily
+    // teachings" is an enrollment request, and enrolling IS their consent.
+    // Re-sending the welcome wall (or RAG-answering an account request with a
+    // scripture essay) is exactly the failure mode this avoids.
+    const consentNotConsumed =
+      obState === "awaiting-consent" &&
+      result.nextState === "awaiting-consent" &&
+      result.patch.consentGranted === undefined;
+    if (!consentNotConsumed) {
+      if (result.deflected) {
+        // Real question mid-onboarding: let RAG answer, then re-prompt.
+        await userRef.set({ onboardingV2State: result.nextState }, { merge: true });
+        queueReprompt(user, chatGuid, result.nextState);
+        return { handled: false };
+      }
+      await applyOnboardingStep(
+        user,
+        chatGuid,
+        result.nextState,
+        result.patch as Record<string, unknown>,
+        result.replies
+      );
+      return { handled: true };
     }
-    await applyOnboardingStep(
-      user,
-      chatGuid,
-      result.nextState,
-      result.patch as Record<string, unknown>,
-      result.replies
-    );
-    return { handled: true };
   }
 
   // Pending time change ("CHANGE TIME" → next message is the new time).
@@ -715,10 +733,57 @@ async function buildAgentSnapshot(user: CompanionUserDoc): Promise<CompanionAgen
   };
 }
 
-const NOT_SET_UP = {
-  error: "not-set-up",
-  note: "The user hasn't completed consent/setup. Warmly tell them to text START so you can get them set up first (consent requires that exact keyword).",
+const OPTED_OUT = {
+  error: "opted-out",
+  note:
+    "They previously opted out (STOP), so re-opting-in requires them to text the exact keyword " +
+    "START — that one is compliance, not a formality. Warmly ask them to text START, and say " +
+    "you'll set this up the moment they do.",
 };
+
+const NO_SCHEDULE_YET = {
+  error: "not-set-up",
+  note:
+    "They have no delivery schedule yet. Offer to enroll them in a program or Daily Dharma — " +
+    "enrolling sets everything up, and you can pass their requested time along with it.",
+};
+
+/**
+ * Unblock scheduling for a user who never went through consent: an explicit
+ * "enroll me / set me up" request in conversation IS affirmative consent, so
+ * record it and let the tool proceed instead of bouncing them to a START
+ * keyword they never needed. The one exception is a prior STOP — undoing a
+ * revocation stays deterministic (the START keyword), never model-decided.
+ * Also marks onboarding-v2 completed so the machine stops intercepting their
+ * messages. Returns preferences on success, or a model-facing error object.
+ */
+async function ensureSchedulingConsent(
+  userId: string
+): Promise<DeliveryPreferences | { error: string; note: string }> {
+  const prefs = await getPreferences(adminDb, userId);
+  if (prefs?.consentStatus === "granted") return prefs;
+  if (prefs?.consentStatus === "revoked") return OPTED_OUT;
+  await savePreferences(adminDb, userId, {
+    consentStatus: "granted",
+    consentTimestamp: Date.now(),
+    consentSource: "imessage",
+    enabled: true,
+    dailyDharmaEnabled: prefs?.dailyDharmaEnabled ?? false,
+    programMessagesEnabled: true,
+    festivalMessagesEnabled: true,
+    weeklyRecapEnabled: true,
+    inactivityCheckInsEnabled: true,
+    timezone: prefs?.timezone ?? DEFAULT_TZ,
+    preferredLocalTime: prefs?.preferredLocalTime ?? "07:30",
+    createdAt: prefs?.createdAt ?? Date.now(),
+  });
+  await imessageUsersCol()
+    .doc(userId)
+    .set({ onboardingV2State: "completed", updatedAt: Date.now() }, { merge: true });
+  const saved = await getPreferences(adminDb, userId);
+  if (!saved) throw new Error(`preferences missing right after save for ${userId}`);
+  return saved;
+}
 
 /**
  * Parse a user-worded time ("9am", "after dinner") into "HH:mm", or return a
@@ -787,8 +852,8 @@ function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
 
   const base: CompanionToolExecutor = {
     async enrollInProgram({ programSlug, time }) {
-      const prefs = await getPreferences(adminDb, userId);
-      if (!prefs || prefs.consentStatus !== "granted") return NOT_SET_UP;
+      const prefs = await ensureSchedulingConsent(userId);
+      if ("error" in prefs) return prefs;
       const program = getProgram(programSlug);
       if (!program) return { error: "unknown-program" };
 
@@ -865,8 +930,8 @@ function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
     },
 
     async enableDailyDharma({ time }) {
-      const prefs = await getPreferences(adminDb, userId);
-      if (!prefs || prefs.consentStatus !== "granted") return NOT_SET_UP;
+      const prefs = await ensureSchedulingConsent(userId);
+      if ("error" in prefs) return prefs;
 
       let localTime: string | undefined;
       if (time) {
@@ -1262,7 +1327,10 @@ async function handleCommand(
           `Welcome back — Daily Dharma resumes at your usual time.${nudge ? `\n\n${nudge}` : ""}`,
         ]);
       } else {
-        await beginOnboardingV2(user, chatGuid);
+        // They texted START — that IS consent. Passing the text through makes
+        // beginOnboardingV2 take its consent-granted path; without it the user
+        // lands in awaiting-consent and gets told to text START again.
+        await beginOnboardingV2(user, chatGuid, "START");
       }
       return;
     }
@@ -1629,7 +1697,7 @@ async function applyDeliveryTimeChange(
 ): Promise<DeliveryTimeChangeResult> {
   const userId = user.handleId;
   const prefs = await getPreferences(adminDb, userId);
-  if (!prefs || prefs.consentStatus !== "granted") return NOT_SET_UP;
+  if (!prefs || prefs.consentStatus !== "granted") return NO_SCHEDULE_YET;
   const tz = prefs.timezone;
   const newTime = formatLocalTime(time, tz);
 

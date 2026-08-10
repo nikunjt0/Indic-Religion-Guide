@@ -78,10 +78,18 @@ const EXACT: Record<string, Command> = {
 };
 
 function parseNaturalTimeChange(t: string, raw: string): Command | null {
-  const hasChangeVerb =
-    /\b(change|changing|switch|set|move|update|shift|adjust|make|reschedule|rescheduling)\b/.test(
-      t
-    );
+  // Enrollment asks ("set me up with the Gita program", "I want to do daily
+  // teaching") constantly contain the change verbs below plus a delivery noun.
+  // They are requests for the conversational layer, never time changes.
+  if (/\b(enroll|sign (?:me|us) up|set (?:me|us) up|get (?:me )?started|want to (?:do|start|join|begin)|join)\b/.test(t)) {
+    return null;
+  }
+  // Verbs that on their own mean a schedule change vs. verbs that only mean
+  // one when an actual time appears in the message ("set my texts to 8pm"
+  // yes; "make my teachings shorter" no).
+  const hasStrongChangeVerb =
+    /\b(change|changing|switch|move|shift|reschedule|rescheduling)\b/.test(t);
+  const hasWeakChangeVerb = /\b(set|update|adjust|make)\b/.test(t);
   const hasDirectTimeChangePhrase =
     /\b(change|changing|switch|set|move|update|shift|adjust|reschedule|rescheduling)\s+(?:my\s+)?time\b/.test(
       t
@@ -91,11 +99,12 @@ function parseNaturalTimeChange(t: string, raw: string): Command | null {
       t
     ) || /\bmy\s+time\b/.test(t);
   const isCorrection = /^no\s+my\s+scheduled\s+time\b/.test(t);
+  const parsed = parseUserTimeInputDetailed(raw);
+  const hasTimeSignal = /\btime\b/.test(t) || parsed !== null;
+  const hasChangeVerb = hasStrongChangeVerb || (hasWeakChangeVerb && hasTimeSignal);
   if (!(isCorrection || hasDirectTimeChangePhrase || (hasChangeVerb && hasDeliveryTarget))) {
     return null;
   }
-
-  const parsed = parseUserTimeInputDetailed(raw);
   return {
     kind: "change-time",
     time: parsed?.time,

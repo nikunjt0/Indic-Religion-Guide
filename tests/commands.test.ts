@@ -82,6 +82,18 @@ describe("parseCommand", () => {
     expect(parseCommand("can I schedule my daily puja for 7pm?")).toBeNull();
   });
 
+  it("leaves enrollment requests to the conversational layer", () => {
+    // Real transcript: this was mis-parsed as change-time ("set" + "teaching")
+    // and silently suppressed instead of enrolling the user.
+    expect(
+      parseCommand("I want to do daily teaching + 7 days of Gita set me up with that")
+    ).toBeNull();
+    expect(parseCommand("set me up with daily teachings")).toBeNull();
+    expect(parseCommand("sign me up for Hinduism 101")).toBeNull();
+    expect(parseCommand("I want to join the Gita program at 7am")).toBeNull();
+    expect(parseCommand("make my teachings shorter")).toBeNull();
+  });
+
   it("returns null for empty / free-form text", () => {
     expect(parseCommand("")).toBeNull();
     expect(parseCommand("What is dharma?")).toBeNull();

@@ -92,13 +92,18 @@ export function welcomeMessage(ctx: OnboardingContext): string {
       `by texting me. Start your free week here (Apple Pay works): ${ctx.signupUrl}\n\n`
     : "";
   return (
-    `Namaste! 🙏 I'm your Hindu Guru — a daily learning companion grounded in scripture. ` +
-    `I'm trained on the Bhagavad Gita, the Upanishads, the Ramayana and Mahabharata, the Puranas, ` +
-    `devotional poetry, and classical Ayurveda texts, and I cite my sources when I answer.\n\n` +
-    `You can text me any question, anytime — about a verse, a ritual, a festival, or something ` +
-    `you've wondered about for years. I can also send one short teaching each day at a time you choose.\n\n` +
+    `Namaste, and welcome! 🙏 I'm your Hindu Guru — a daily companion for dharma and Hindu ` +
+    `traditions, grounded in scripture: the Bhagavad Gita, the Upanishads, the Ramayana and ` +
+    `Mahabharata, the Puranas, devotional poetry, and classical Ayurveda. I cite my sources ` +
+    `when I answer.\n\n` +
+    `Here's what I can do for you:\n` +
+    `• Text you one short daily teaching at a time you choose\n` +
+    `• Walk you through programs like Hinduism 101 or Seven Days of the Bhagavad Gita\n` +
+    `• Answer any question, anytime — a verse, a ritual, a festival, or something you've ` +
+    `wondered about for years\n\n` +
     pricing +
-    `Reply START to begin. Message frequency depends on your settings. Reply STOP anytime to opt out.`
+    `Ready? Just tell me what you'd like — daily teachings, a program, or a question — and ` +
+    `I'll set you up. (Reply STOP anytime to opt out.)`
   );
 }
 
