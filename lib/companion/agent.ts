@@ -73,7 +73,13 @@ export interface CompanionToolExecutor {
 
 export type CompanionAgentResult =
   | { kind: "reply"; text: string; guruQuestion?: string; actionsTaken: number }
-  | { kind: "pass-to-guru" };
+  /**
+   * The whole message is a content question. `question` is the model's
+   * standalone rewording — essential for short continuations like "deeper",
+   * where the literal text is useless as a retrieval query. Callers fall back
+   * to the original text when it's absent.
+   */
+  | { kind: "pass-to-guru"; question?: string };
 
 export interface AgentHistoryMessage {
   role: "user" | "assistant";
@@ -130,6 +136,10 @@ They can be enrolled in several programs at the same time, and each program — 
 Answer every part of their message. If they ask two things, address both.
 
 If any part of the message is a question about Hindu scripture, practice, philosophy, ritual, festivals, or Ayurveda — teaching content rather than their account — call answer_scripture_question with that part. A scripture-grounded answer with citations is sent separately; do not answer content questions yourself.
+
+The conversation history includes the daily teachings we sent them, not just chat. When they send a short follow-up — "deeper", "more", "sources", "the kids version", "simpler", "what's the practice" — work out from the history what it refers to; never treat it as a menu keyword:
+- If it refers to a delivered program lesson, call get_lesson_content and share the matching part (deeper explanation, kids version, source note, practice) warmly in your own words. If that part doesn't exist for the lesson, say so and offer what does.
+- If it refers to a scripture answer, a Daily Dharma teaching, or anything else in the conversation, call answer_scripture_question with the follow-up reworded to stand alone (e.g. "deeper" after an answer about Shiva becomes "Go deeper on Shiva — his forms, his worship, what his stories teach").
 
 THEIR ACCOUNT RIGHT NOW:
 ${account.map((l) => `- ${l}`).join("\n")}
@@ -439,11 +449,16 @@ export async function runCompanionAgent(args: {
       return { kind: "reply", text: text || "Done. 🙏", guruQuestion, actionsTaken };
     }
 
-    // The whole message is a content question: hand off cleanly so the guru
-    // pipeline sees the original text (and any attachments) untouched.
+    // The whole message is a content question: hand off to the guru pipeline
+    // (attachments ride along untouched), carrying the standalone rewording so
+    // a bare continuation like "deeper" retrieves on what it actually means.
     const isPass = (c: ToolCallLike) => c.function?.name === "answer_scripture_question";
     if (round === 0 && actionsTaken === 0 && toolCalls.every(isPass)) {
-      return { kind: "pass-to-guru" };
+      const q = parseArgs(toolCalls[0].function!.arguments).question;
+      return {
+        kind: "pass-to-guru",
+        question: typeof q === "string" && q.trim() ? q.trim() : undefined,
+      };
     }
 
     messages.push({

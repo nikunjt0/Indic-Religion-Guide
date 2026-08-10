@@ -195,7 +195,7 @@ async function processInbound({
   }
 
   // Companion layer: onboarding-v2 steps, deterministic commands
-  // (STOP/PAUSE/DEEPER/…), and the conversational account agent. When the
+  // (STOP/PAUSE/…), and the conversational account agent. When the
   // agent answered the account part of a mixed message it hands back the
   // remaining scripture question for the guru.
   let guruQuestion: string | undefined;

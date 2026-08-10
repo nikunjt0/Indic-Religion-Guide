@@ -97,6 +97,11 @@ describe("companion agent system prompt", () => {
     expect(prompt).toContain("seven-hindu-stories-for-families");
     expect(prompt).toContain("Daily Dharma (one standalone teaching a day): off");
     expect(prompt).toContain("Never tell them to text a code");
+    // Continuations ("deeper", "kids version") are resolved from history, not
+    // treated as menu keywords.
+    expect(prompt).toContain("never treat it as a menu keyword");
+    expect(prompt).toContain("get_lesson_content");
+    expect(prompt).toContain("reworded to stand alone");
   });
 
   it("lists every concurrent program with its own delivery time", () => {
@@ -245,7 +250,7 @@ describe("runCompanionAgent", () => {
     ]);
   });
 
-  it("hands a pure scripture question to the guru untouched", async () => {
+  it("hands a pure scripture question to the guru with its standalone rewording", async () => {
     const { executor, calls } = fakeExecutor();
     const model = scriptedModel([
       {
@@ -260,9 +265,46 @@ describe("runCompanionAgent", () => {
       executor,
       createCompletion: model.create,
     });
-    expect(result).toEqual({ kind: "pass-to-guru" });
+    expect(result).toEqual({ kind: "pass-to-guru", question: "What is karma?" });
     expect(calls).toEqual([]);
     expect(model.bodies).toHaveLength(1);
+  });
+
+  it("answers a lesson continuation from get_lesson_content instead of passing to the guru", async () => {
+    const { executor, calls } = fakeExecutor({
+      getLessonContent: async (args) => {
+        calls.push({ name: "getLessonContent", args });
+        return {
+          programId: "seven-hindu-stories-for-families",
+          day: 1,
+          title: "Ganesha and the Race Around the World",
+          deeperMessage: "This story rewards a second look…",
+        };
+      },
+    });
+    const model = scriptedModel([
+      {
+        content: null,
+        tool_calls: [
+          toolCall("get_lesson_content", { program_slug: "seven-hindu-stories-for-families" }),
+        ],
+      },
+      { content: "This story rewards a second look…" },
+    ]);
+    const result = await runCompanionAgent({
+      message: "deeper",
+      history: [
+        { role: "assistant", content: "STORY 1 OF 7 — GANESHA AND THE RACE AROUND THE WORLD…" },
+      ],
+      snapshot: snapshot(),
+      executor,
+      createCompletion: model.create,
+    });
+    expect(result.kind).toBe("reply");
+    if (result.kind === "reply") expect(result.text).toContain("second look");
+    expect(calls).toEqual([
+      { name: "getLessonContent", args: { programSlug: "seven-hindu-stories-for-families" } },
+    ]);
   });
 
   it("handles a mixed message: performs the account action and extracts the scripture question", async () => {
