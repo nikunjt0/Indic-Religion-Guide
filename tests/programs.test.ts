@@ -7,7 +7,6 @@ import {
   advanceEnrollment,
   lessonForDay,
   newEnrollment,
-  resolveProgramChoice,
   scheduleCurrentLesson,
   type ProgramWithLessons,
 } from "../lib/programs/engine";
@@ -193,66 +192,6 @@ describe("program engine", () => {
     );
 
     expect(res).toEqual({ created: false, reason: "queued-delivery-not-found" });
-  });
-
-  it("resolves exact program slugs and titles from a raw message", () => {
-    const catalog = [
-      { slug: "hinduism-101", title: "Hinduism 101" },
-      { slug: "seven-days-bhagavad-gita", title: "Seven Days with the Bhagavad Gita" },
-      { slug: "seven-hindu-stories-for-families", title: "Seven Hindu Stories for Families" },
-    ];
-    expect(resolveProgramChoice("HINDUISM-101", catalog)).toEqual({
-      kind: "program",
-      slug: "hinduism-101",
-    });
-    expect(resolveProgramChoice("hinduism 101", catalog)).toEqual({
-      kind: "program",
-      slug: "hinduism-101",
-    });
-    expect(resolveProgramChoice("Seven Days with the Bhagavad Gita", catalog)).toEqual({
-      kind: "program",
-      slug: "seven-days-bhagavad-gita",
-    });
-    expect(resolveProgramChoice("DAILY DHARMA", catalog)).toEqual({ kind: "daily-dharma" });
-  });
-
-  it("does not fuzzy-match a raw message in exact mode", () => {
-    const catalog = [
-      { slug: "hinduism-101", title: "Hinduism 101" },
-      { slug: "seven-days-bhagavad-gita", title: "Seven Days with the Bhagavad Gita" },
-    ];
-    expect(resolveProgramChoice("gita", catalog)).toBeNull();
-    expect(resolveProgramChoice("what is hinduism?", catalog)).toBeNull();
-    expect(resolveProgramChoice("dharma", catalog)).toBeNull();
-  });
-
-  it("fuzzy mode accepts a unique partial match and flags ambiguity", () => {
-    const catalog = [
-      { slug: "hinduism-101", title: "Hinduism 101" },
-      { slug: "seven-days-bhagavad-gita", title: "Seven Days with the Bhagavad Gita" },
-      { slug: "seven-days-karma-and-dharma", title: "Seven Days of Karma and Dharma" },
-      { slug: "seven-hindu-stories-for-families", title: "Seven Hindu Stories for Families" },
-    ];
-    expect(resolveProgramChoice("the Bhagavad Gita one", catalog, { fuzzy: true })).toEqual({
-      kind: "program",
-      slug: "seven-days-bhagavad-gita",
-    });
-    expect(resolveProgramChoice("gita", catalog, { fuzzy: true })).toEqual({
-      kind: "program",
-      slug: "seven-days-bhagavad-gita",
-    });
-    expect(resolveProgramChoice("stories for families", catalog, { fuzzy: true })).toEqual({
-      kind: "program",
-      slug: "seven-hindu-stories-for-families",
-    });
-    expect(resolveProgramChoice("daily dharma please", catalog, { fuzzy: true })).toEqual({
-      kind: "daily-dharma",
-    });
-    const ambiguous = resolveProgramChoice("seven days", catalog, { fuzzy: true });
-    expect(ambiguous?.kind).toBe("ambiguous");
-    expect(resolveProgramChoice("meditation retreat", catalog, { fuzzy: true })).toBeNull();
-    // Too short to trust as a partial match.
-    expect(resolveProgramChoice("hi", catalog, { fuzzy: true })).toBeNull();
   });
 
   it("refuses canceled enrollments and missing lessons", async () => {

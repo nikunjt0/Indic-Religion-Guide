@@ -5,9 +5,11 @@ import { splitForSms } from "./format.ts";
 import { sendSegments } from "./bluebubbles.ts";
 import { parseCommand, type Command } from "../../lib/commands/router.ts";
 import {
-  routeCompanionToolIntent,
-  type CompanionToolIntent,
-} from "../../lib/commands/tool-router.ts";
+  runCompanionAgent,
+  type CompanionAgentSnapshot,
+  type CompanionToolExecutor,
+} from "../../lib/companion/agent.ts";
+import { appendTurn, loadRecentMessages } from "./history.ts";
 import {
   currentPrompt,
   stepOnboarding,
@@ -28,9 +30,7 @@ import {
   advanceEnrollment,
   lessonForDay,
   newEnrollment,
-  resolveProgramChoice,
   scheduleCurrentLesson,
-  type ProgramChoice,
   type ProgramWithLessons,
 } from "../../lib/programs/engine.ts";
 import { loadAllProgramFiles } from "../../lib/programs/content.ts";
@@ -398,15 +398,26 @@ export async function beginOnboardingV2(
   await reply(chatGuid, [welcomeMessage(obCtx())]);
 }
 
+export interface CompanionInboundResult {
+  handled: boolean;
+  /**
+   * Set when the agent already replied to the account part of a mixed message
+   * and extracted the remaining scripture question for the RAG guru. The
+   * caller should answer this question instead of the raw inbound text.
+   */
+  guruQuestion?: string;
+}
+
 /**
- * Handle an inbound message through the companion layer. Returns true when
- * fully handled (onboarding step or command); false → fall through to RAG.
+ * Handle an inbound message through the companion layer: onboarding steps,
+ * deterministic keyword commands, then the conversational account agent.
+ * `handled: false` → fall through to the RAG guru.
  */
 export async function handleCompanionInbound(
   user: CompanionUserDoc,
   chatGuid: string,
   text: string
-): Promise<boolean> {
+): Promise<CompanionInboundResult> {
   const userRef = imessageUsersCol().doc(user.handleId);
 
   // Onboarding v2 in progress.
@@ -417,7 +428,7 @@ export async function handleCompanionInbound(
       // Real question mid-onboarding: let RAG answer, then re-prompt.
       await userRef.set({ onboardingV2State: result.nextState }, { merge: true });
       queueReprompt(user.handleId, chatGuid, result.nextState);
-      return false;
+      return { handled: false };
     }
     await applyOnboardingStep(
       user,
@@ -426,7 +437,7 @@ export async function handleCompanionInbound(
       result.patch as Record<string, unknown>,
       result.replies
     );
-    return true;
+    return { handled: true };
   }
 
   // Pending time change ("CHANGE TIME" → next message is the new time).
@@ -436,207 +447,321 @@ export async function handleCompanionInbound(
       await reply(chatGuid, [
         "Please include AM or PM for that delivery time, like “6:25 PM”.",
       ]);
-      return true;
+      return { handled: true };
     }
     if (parsed) {
       await userRef.set({ pendingTimeChange: false }, { merge: true });
       await changeDeliveryTime(user, chatGuid, parsed.time);
-      return true;
+      return { handled: true };
     }
     await userRef.set({ pendingTimeChange: false }, { merge: true });
     // Not a time — fall through (maybe it's a question or a command).
   }
 
+  // Exact keyword commands (STOP, DELETE MY DATA, PAUSE, DEEPER, …) stay
+  // deterministic: compliance keywords must never depend on a model, and the
+  // rest are documented single-word replies.
   const cmd = parseCommand(text);
-  if (cmd && cmd.kind !== "change-time") {
+  if (cmd) {
     await handleCommand(user, chatGuid, cmd);
-    return true;
+    return { handled: true };
   }
 
-  // The whole message is a program name or slug ("HINDUISM-101", "Daily
-  // Dharma") — the PROGRAMS list invites exactly this reply, so it must work
-  // deterministically, without an LLM.
-  if (!cmd) {
-    const choice = resolveProgramChoice(text, [...programs().values()]);
-    if (choice && choice.kind !== "ambiguous") {
-      await enrollFromChoice(user, chatGuid, choice);
-      return true;
-    }
-  }
+  if (!text.trim()) return { handled: false };
 
-  const toolIntent = await routeAccountToolIntent(text);
-  if (toolIntent.kind !== "none") {
-    await handleToolIntent(user, chatGuid, toolIntent);
-    return true;
-  }
-
-  if (!cmd) return false;
-  await handleCommand(user, chatGuid, cmd);
-  return true;
-}
-
-async function routeAccountToolIntent(text: string): Promise<CompanionToolIntent> {
+  // Everything else: the conversational account agent. It sees the account
+  // state and chat history, performs account actions through tools, and
+  // composes its own reply — or hands the message to the RAG guru when it's
+  // a content question.
   try {
-    return await routeCompanionToolIntent(text);
+    const [snapshot, history] = await Promise.all([
+      buildAgentSnapshot(user),
+      loadRecentMessages(user.handleId),
+    ]);
+    const result = await runCompanionAgent({
+      message: text,
+      history: history
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      snapshot,
+      executor: agentExecutor(user),
+    });
+    if (result.kind === "pass-to-guru") return { handled: false };
+    if (result.text) {
+      await reply(chatGuid, [result.text]);
+      await appendTurn(user.handleId, { content: text }, { content: result.text });
+    }
+    if (result.guruQuestion) return { handled: false, guruQuestion: result.guruQuestion };
+    return { handled: true };
   } catch (err) {
-    log.error("account tool routing failed:", err);
-    return { kind: "none" };
+    // Agent failure must not silence the user — fall through to the guru.
+    log.error("companion agent failed — falling through to RAG:", err);
+    return { handled: false };
   }
 }
 
-async function handleToolIntent(
-  user: CompanionUserDoc,
-  chatGuid: string,
-  intent: CompanionToolIntent
-): Promise<void> {
-  switch (intent.kind) {
-    case "change-time": {
-      const parsed = parseUserTimeInputDetailed(intent.timeText);
-      if (parsed?.needsMeridiem) {
-        await imessageUsersCol()
-          .doc(user.handleId)
-          .set({ pendingTimeChange: true }, { merge: true });
-        await reply(chatGuid, [
-          "Please include AM or PM for that delivery time, like “6:25 PM”.",
-        ]);
-        return;
-      }
-      if (parsed) {
-        await imessageUsersCol()
-          .doc(user.handleId)
-          .set({ pendingTimeChange: false }, { merge: true });
-        await changeDeliveryTime(user, chatGuid, parsed.time);
-        return;
-      }
-      await imessageUsersCol()
-        .doc(user.handleId)
-        .set({ pendingTimeChange: true }, { merge: true });
-      await reply(chatGuid, [
-        "What time should your messages arrive? You can say “7:30 AM” or “after dinner”.",
-      ]);
-      return;
-    }
-    case "start-change-time-flow": {
-      await imessageUsersCol()
-        .doc(user.handleId)
-        .set({ pendingTimeChange: true }, { merge: true });
-      await reply(chatGuid, [
-        "What time should your messages arrive? You can say “7:30 AM” or “after dinner”.",
-      ]);
-      return;
-    }
-    case "show-time":
-      await handleCommand(user, chatGuid, { kind: "time" });
-      return;
-    case "list-programs":
-      await handleCommand(user, chatGuid, { kind: "programs" });
-      return;
-    case "show-my-program":
-      await handleCommand(user, chatGuid, { kind: "my-program" });
-      return;
-    case "show-help":
-      await handleCommand(user, chatGuid, { kind: "help" });
-      return;
-    case "enroll": {
-      const choice = resolveProgramChoice(intent.programText, [...programs().values()], {
-        fuzzy: true,
-      });
-      if (!choice) {
-        await reply(chatGuid, [
-          `I couldn't match “${intent.programText}” to one of our programs.`,
-        ]);
-        await handleCommand(user, chatGuid, { kind: "programs" });
-        return;
-      }
-      if (choice.kind === "ambiguous") {
-        const options = choice.slugs
-          .map((slug) => (slug === "daily-dharma" ? "Daily Dharma" : getProgram(slug)?.title ?? slug))
-          .join(", ");
-        await reply(chatGuid, [
-          `A few of our programs match that — did you mean: ${options}? Reply with the full name.`,
-        ]);
-        return;
-      }
-      await enrollFromChoice(user, chatGuid, choice);
-      return;
-    }
-    case "none":
-      return;
-  }
-}
+// ---------------------------------------------------------------------------
+// Agent wiring: account snapshot + tool executors
+// ---------------------------------------------------------------------------
 
-/**
- * Enroll (or switch) an already-onboarded user into a program or Daily Dharma
- * from a plain text request — the companion equivalent of the onboarding
- * program-selection step. Users without granted consent are routed into the
- * consent-first onboarding instead.
- */
-async function enrollFromChoice(
-  user: CompanionUserDoc,
-  chatGuid: string,
-  choice: Exclude<ProgramChoice, { kind: "ambiguous" }>
-): Promise<void> {
+async function buildAgentSnapshot(user: CompanionUserDoc): Promise<CompanionAgentSnapshot> {
   const prefs = await getPreferences(adminDb, user.handleId);
-  if (!prefs || prefs.consentStatus !== "granted") {
-    await reply(chatGuid, ["Happy to set that up — let's get you started first."]);
-    await beginOnboardingV2(user, chatGuid);
-    return;
-  }
+  const enrollment = await getActiveEnrollment(adminDb, user.handleId);
+  const program = enrollment ? getProgram(enrollment.programId) : null;
+  const tz = prefs?.timezone ?? DEFAULT_TZ;
 
-  if (choice.kind === "daily-dharma") {
-    if (prefs.dailyDharmaEnabled) {
-      await reply(chatGuid, [
-        `Daily Dharma is already on — one teaching each day at ${formatPrefTime(prefs)}. Reply CHANGE TIME to adjust it.`,
-      ]);
-      return;
+  let nextMessageText: string | undefined;
+  if (prefs) {
+    const pending = await deliveryStore.findPendingByUser(user.handleId);
+    const nextUp = pending
+      .filter((d) => ["queued", "retry"].includes(d.status))
+      .sort((a, b) => a.scheduledAt - b.scheduledAt)[0];
+    if (nextUp) {
+      nextMessageText = DateTime.fromMillis(nextUp.scheduledAt, { zone: tz }).toFormat(
+        "cccc, LLL d 'at' h:mm a ZZZZ"
+      );
     }
-    await savePreferences(adminDb, user.handleId, { dailyDharmaEnabled: true });
-    await scheduleNextDailyDharma(user.handleId);
-    await reply(chatGuid, [
-      `You're set: one Daily Dharma teaching at ${formatPrefTime(prefs)} each day. ` +
-        `Reply PAUSE, STOP, or CHANGE TIME anytime.`,
-    ]);
-    return;
   }
 
-  const program = getProgram(choice.slug);
-  if (!program) {
-    await reply(chatGuid, ["I couldn't find that program — reply PROGRAMS to see the list."]);
-    return;
-  }
+  const pausedUntil = prefs?.pausedUntil ?? null;
+  const paused = pausedUntil !== null && pausedUntil > Date.now();
+  return {
+    productName: PRODUCT_NAME,
+    userName: user.displayName,
+    consentGranted: prefs?.consentStatus === "granted",
+    optedOut: prefs?.consentStatus === "revoked",
+    pausedUntilText: paused
+      ? pausedUntil === PAUSED_INDEFINITELY
+        ? "they say resume"
+        : DateTime.fromMillis(pausedUntil, { zone: tz }).toFormat("cccc, LLL d")
+      : undefined,
+    deliveryTimeText: prefs ? formatPrefTime(prefs) : undefined,
+    nextMessageText,
+    dailyDharmaEnabled: prefs?.dailyDharmaEnabled ?? false,
+    program:
+      enrollment && program
+        ? {
+            slug: program.slug,
+            title: program.title,
+            day: enrollment.currentDay,
+            durationDays: program.durationDays,
+            lessonsDelivered: enrollment.completedLessonDays.length,
+          }
+        : null,
+    catalog: [...programs().values()].map((p) => ({
+      slug: p.slug,
+      title: p.title,
+      durationDays: p.durationDays,
+      description: p.shortDescription,
+    })),
+    localNowText: DateTime.now().setZone(tz).toFormat("cccc, LLL d, h:mm a ZZZZ"),
+  };
+}
 
-  const active = await getActiveEnrollment(adminDb, user.handleId);
-  if (active?.programId === program.slug) {
-    await reply(chatGuid, [
-      `You're already in ${program.title} — day ${active.currentDay} of ${program.durationDays}. ` +
-        `Reply RESTART to start it over, or PROGRAMS to browse.`,
-    ]);
-    return;
-  }
-  if (active) {
-    await saveEnrollment(adminDb, { ...active, status: "canceled", updatedAt: Date.now() });
-    await cancelPendingDeliveries(engineDeps, user.handleId, ["program-lesson"]);
-  }
+const NOT_SET_UP = {
+  error: "not-set-up",
+  note: "The user hasn't completed consent/setup. Warmly tell them to text START so you can get them set up first (consent requires that exact keyword).",
+};
 
-  const enrollment = newEnrollment({
-    userId: user.handleId,
-    program,
-    nowMs: Date.now(),
-    source: "conversation",
-  });
-  await saveEnrollment(adminDb, enrollment);
-  const res = await rescheduleActive(user, false);
-  const switchNote = active ? `Switched from ${getProgram(active.programId)?.title ?? active.programId}. ` : "";
-  if (!res) {
-    await reply(chatGuid, [
-      `${switchNote}You're enrolled in ${program.title}, but I couldn't confirm the first lesson in the delivery queue. Reply MY PROGRAM in a minute to check.`,
-    ]);
-    return;
-  }
-  await reply(chatGuid, [
-    `${switchNote}You're enrolled in ${program.title} — ${program.durationDays} days, one text a day. ` +
-      `Day ${res.day} arrives ${res.when}. Reply PAUSE, STOP, or CHANGE TIME anytime.`,
-  ]);
+function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
+  const userId = user.handleId;
+  return {
+    async enrollInProgram({ programSlug, replaceCurrent }) {
+      const prefs = await getPreferences(adminDb, userId);
+      if (!prefs || prefs.consentStatus !== "granted") return NOT_SET_UP;
+      const program = getProgram(programSlug);
+      if (!program) return { error: "unknown-program" };
+      const active = await getActiveEnrollment(adminDb, userId);
+      if (active?.programId === program.slug) {
+        return {
+          status: "already-enrolled",
+          program: program.title,
+          day: active.currentDay,
+          durationDays: program.durationDays,
+          note: "They are already in this program. Offer to restart it if they want to begin again.",
+        };
+      }
+      if (active && !replaceCurrent) {
+        return {
+          status: "needs-confirmation",
+          currentProgram: getProgram(active.programId)?.title ?? active.programId,
+          currentDay: active.currentDay,
+          note: "Only one program runs at a time and their progress in the current one is saved. Ask whether they want to switch; if they confirm, call again with replace_current true.",
+        };
+      }
+      let switchedFrom: string | undefined;
+      if (active) {
+        await saveEnrollment(adminDb, { ...active, status: "canceled", updatedAt: Date.now() });
+        await cancelPendingDeliveries(engineDeps, userId, ["program-lesson"]);
+        switchedFrom = getProgram(active.programId)?.title ?? active.programId;
+      }
+      const enrollment = newEnrollment({
+        userId,
+        program,
+        nowMs: Date.now(),
+        source: "conversation",
+      });
+      await saveEnrollment(adminDb, enrollment);
+      const res = await rescheduleActive(user, false);
+      if (!res) {
+        return {
+          status: "enrolled-but-unverified",
+          program: program.title,
+          switchedFrom,
+          note: "Enrollment saved, but the first lesson could not be confirmed in the delivery queue. Say you're double-checking on your end and it may take a minute.",
+        };
+      }
+      return {
+        status: "enrolled",
+        program: program.title,
+        durationDays: program.durationDays,
+        firstLessonDay: res.day,
+        firstLessonArrives: res.when,
+        switchedFrom,
+      };
+    },
+
+    async enableDailyDharma() {
+      const prefs = await getPreferences(adminDb, userId);
+      if (!prefs || prefs.consentStatus !== "granted") return NOT_SET_UP;
+      if (prefs.dailyDharmaEnabled) {
+        return { status: "already-on", deliveryTime: formatPrefTime(prefs) };
+      }
+      await savePreferences(adminDb, userId, { dailyDharmaEnabled: true });
+      await scheduleNextDailyDharma(userId);
+      return { status: "enabled", deliveryTime: formatPrefTime(prefs) };
+    },
+
+    async disableDailyDharma() {
+      await savePreferences(adminDb, userId, { dailyDharmaEnabled: false });
+      await cancelPendingDeliveries(engineDeps, userId, ["daily-dharma"]);
+      return { status: "disabled" };
+    },
+
+    async changeDeliveryTime(timeText) {
+      const prefs = await getPreferences(adminDb, userId);
+      if (!prefs || prefs.consentStatus !== "granted") return NOT_SET_UP;
+      const parsed = parseUserTimeInputDetailed(timeText);
+      if (parsed?.needsMeridiem) {
+        return { error: "ambiguous-time", note: "Ask whether they mean AM or PM." };
+      }
+      if (!parsed) {
+        return {
+          error: "unrecognized-time",
+          note: "Ask what time they'd like — e.g. 7:30 AM, 8 pm, or after dinner.",
+        };
+      }
+      return applyDeliveryTimeChange(user, parsed.time);
+    },
+
+    async pauseMessages(days) {
+      const until = days ? Date.now() + days * 86_400_000 : PAUSED_INDEFINITELY;
+      await savePreferences(adminDb, userId, {
+        pausedUntil: until,
+        pauseReason: days ? `pause-${days}d` : "pause-indefinite",
+      });
+      await cancelPendingDeliveries(engineDeps, userId, ["program-lesson", "daily-dharma"]);
+      return {
+        status: "paused",
+        days: days ?? null,
+        note: days
+          ? "Progress is saved; messages resume automatically after the pause."
+          : "Paused until they ask to resume. Progress is saved.",
+      };
+    },
+
+    async resumeMessages() {
+      await savePreferences(adminDb, userId, { pausedUntil: null, pauseReason: "" });
+      const resumed = await rescheduleActive(user, false);
+      if (resumed) {
+        return {
+          status: "resumed",
+          nextLessonDay: resumed.day,
+          arrives: resumed.when,
+          note: "They continue from where they paused — no missed-lesson pile-up.",
+        };
+      }
+      const prefs = await getPreferences(adminDb, userId);
+      if (prefs?.dailyDharmaEnabled) {
+        await scheduleNextDailyDharma(userId);
+        return { status: "resumed", note: "Daily Dharma returns at the usual time." };
+      }
+      return { status: "nothing-to-resume" };
+    },
+
+    async restartProgram() {
+      const enrollment = await getActiveEnrollment(adminDb, userId);
+      const program = enrollment && getProgram(enrollment.programId);
+      if (!enrollment || !program) return { error: "no-active-program" };
+      await saveEnrollment(adminDb, {
+        ...enrollment,
+        currentDay: 1,
+        completedLessonDays: [],
+        skippedLessonDays: [],
+        status: "active",
+        updatedAt: Date.now(),
+      });
+      await cancelPendingDeliveries(engineDeps, userId, ["program-lesson"]);
+      const res = await rescheduleActive(user, false);
+      return {
+        status: "restarted",
+        program: program.title,
+        firstLessonArrives: res?.when ?? null,
+      };
+    },
+
+    async skipTodaysLesson() {
+      const enrollment = await getActiveEnrollment(adminDb, userId);
+      const program = enrollment && getProgram(enrollment.programId);
+      if (!enrollment || !program) return { error: "no-active-program" };
+      const skipped = enrollment.currentDay;
+      await saveEnrollment(adminDb, {
+        ...enrollment,
+        skippedLessonDays: [...enrollment.skippedLessonDays, skipped],
+        currentDay: Math.min(skipped + 1, program.durationDays),
+        updatedAt: Date.now(),
+      });
+      await cancelPendingDeliveries(engineDeps, userId, ["program-lesson"]);
+      const res = await rescheduleActive(user, false);
+      return {
+        status: "skipped",
+        skippedDay: skipped,
+        nextLessonDay: res?.day ?? null,
+        arrives: res?.when ?? null,
+      };
+    },
+
+    async optOut() {
+      await savePreferences(adminDb, userId, {
+        consentStatus: "revoked",
+        enabled: false,
+        optOutTimestamp: Date.now(),
+      });
+      const canceled = await cancelPendingDeliveries(engineDeps, userId);
+      log.info(`agent opt-out for ${userId}: canceled ${canceled} pending deliveries`);
+      return {
+        status: "opted-out",
+        note: "All scheduled messages stopped; progress saved. Texting START opts back in — mention that once.",
+      };
+    },
+
+    async getLessonContent() {
+      const lesson = await lastDeliveredLesson(userId);
+      if (!lesson) return { error: "no-lesson-delivered-yet" };
+      const l = lesson.lesson;
+      return {
+        programId: lesson.programId,
+        day: l.dayNumber,
+        title: l.title,
+        standardMessage: l.standardMessage,
+        deeperMessage: l.deeperMessage ?? null,
+        childMessage: l.childMessage ?? null,
+        sourceNote: l.sourceNote ?? null,
+        practicalAction: l.practicalAction ?? null,
+        reflectionQuestion: l.reflectionQuestion ?? null,
+      };
+    },
+  };
 }
 
 const repromptTimers = new Map<string, NodeJS.Timeout>();
@@ -907,11 +1032,12 @@ async function handleCommand(
 
     case "programs": {
       const list = [...programs().values()]
-        .map((p) => `• ${p.title} (${p.durationDays} days) — reply ${p.slug.toUpperCase()}`)
+        .map((p) => `• ${p.title} — ${p.durationDays} days`)
         .join("\n");
       await reply(chatGuid, [
-        `Programs:\n${list}\n• Daily Dharma — one standalone teaching a day (reply DAILY DHARMA)\n` +
-          `Reply with the one you'd like and I'll set it up.`,
+        `Here's what I can send you, one text a day:\n${list}\n` +
+          `• Daily Dharma — one standalone teaching each day\n` +
+          `Just tell me which one you'd like and I'll set it up.`,
       ]);
       return;
     }
@@ -1103,11 +1229,18 @@ async function rescheduleActive(
   };
 }
 
-async function changeDeliveryTime(
+interface DeliveryTimeChangeResult {
+  status: "changed" | "changed-but-unverified";
+  newTime: string;
+  nextLessonArrives?: string | null;
+  note?: string;
+}
+
+/** Core time change shared by the keyword flow and the agent tool. */
+async function applyDeliveryTimeChange(
   user: CompanionUserDoc,
-  chatGuid: string,
   time: string
-): Promise<void> {
+): Promise<DeliveryTimeChangeResult> {
   await savePreferences(adminDb, user.handleId, {
     preferredLocalTime: time,
     lastPreferenceChangeAt: Date.now(),
@@ -1128,20 +1261,37 @@ async function changeDeliveryTime(
     nextLesson: res,
     dailyDharmaEnabled: prefs?.dailyDharmaEnabled ?? false,
   });
+  const newTime = prefs ? formatPrefTime(prefs) : time;
   if (activeEnrollment && !res) {
     log.error("delivery time change could not verify queued lesson", {
       userId: user.handleId,
       preferredLocalTime: time,
       canceledPending: canceled,
     });
+    return {
+      status: "changed-but-unverified",
+      newTime,
+      note: "The preferred time was saved but the next lesson could not be confirmed in the delivery queue. Do not present it as confirmed; say you're double-checking and they can ask again in a minute.",
+    };
+  }
+  return { status: "changed", newTime, nextLessonArrives: res?.when ?? null };
+}
+
+async function changeDeliveryTime(
+  user: CompanionUserDoc,
+  chatGuid: string,
+  time: string
+): Promise<void> {
+  const result = await applyDeliveryTimeChange(user, time);
+  if (result.status === "changed-but-unverified") {
     await reply(chatGuid, [
       "I updated your preferred time, but I could not verify the next lesson in the delivery queue. I’m not marking this confirmed. Please try CHANGE TIME again in a minute.",
     ]);
     return;
   }
   await reply(chatGuid, [
-    `Done — your messages now arrive at ${prefs ? formatPrefTime(prefs) : time}.` +
-      (res ? ` Next lesson: ${res.when}.` : ""),
+    `Done — your messages now arrive at ${result.newTime}.` +
+      (result.nextLessonArrives ? ` Next lesson: ${result.nextLessonArrives}.` : ""),
   ]);
 }
 

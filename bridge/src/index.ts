@@ -194,15 +194,19 @@ async function processInbound({
     return;
   }
 
-  // Companion layer: onboarding-v2 steps and deterministic commands
-  // (STOP/PAUSE/DEEPER/…) are handled before anything reaches the LLM.
+  // Companion layer: onboarding-v2 steps, deterministic commands
+  // (STOP/PAUSE/DEEPER/…), and the conversational account agent. When the
+  // agent answered the account part of a mixed message it hands back the
+  // remaining scripture question for the guru.
+  let guruQuestion: string | undefined;
   try {
-    const handled = await handleCompanionInbound(
+    const companion = await handleCompanionInbound(
       user as unknown as Parameters<typeof handleCompanionInbound>[0],
       chatGuid,
       text,
     );
-    if (handled) return;
+    if (companion.handled) return;
+    guruQuestion = companion.guruQuestion;
   } catch (err) {
     // A failed command/onboarding step must NEVER fall through to the LLM —
     // RAG-answering the literal word "START" or "STOP" is worse than silence.
@@ -226,8 +230,9 @@ async function processInbound({
     return;
   }
 
-  // Onboarded → RAG.
-  await respondWithGuru(user, chatGuid, text, attachments);
+  // Onboarded → RAG (with the agent-extracted question when this was the
+  // scripture half of a mixed account-and-content message).
+  await respondWithGuru(user, chatGuid, guruQuestion ?? text, attachments);
 }
 
 async function runOnboardingFromIntro(user: IMessageUser, chatGuid: string): Promise<void> {
