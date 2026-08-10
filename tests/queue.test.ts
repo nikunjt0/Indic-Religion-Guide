@@ -81,30 +81,32 @@ describe("enqueueDelivery idempotency", () => {
     expect(store.records.size).toBe(2);
   });
 
-  it("revives a canceled same-day delivery when it is intentionally rescheduled", async () => {
-    const { deps, store, provider, clock } = makeDeps();
-    const first = await enqueueDelivery(deps, enqueueParams());
-    await store.update(first.record.id, { status: "canceled", updatedAt: T0 + 1 });
+  it("revives unsent terminal same-day deliveries when intentionally rescheduled", async () => {
+    for (const terminalStatus of ["canceled", "suppressed", "failed"] as const) {
+      const { deps, store, provider, clock } = makeDeps();
+      const first = await enqueueDelivery(deps, enqueueParams());
+      await store.update(first.record.id, { status: terminalStatus, updatedAt: T0 + 1 });
 
-    const rescheduledAt = T0 + 5 * 60_000;
-    const second = await enqueueDelivery(
-      deps,
-      enqueueParams({ scheduledAt: rescheduledAt, renderedMessage: "rescheduled body" })
-    );
+      const rescheduledAt = T0 + 5 * 60_000;
+      const second = await enqueueDelivery(
+        deps,
+        enqueueParams({ scheduledAt: rescheduledAt, renderedMessage: "rescheduled body" })
+      );
 
-    expect(second.created).toBe(true);
-    expect(second.record.id).toBe(first.record.id);
-    expect((await store.get(first.record.id))!).toMatchObject({
-      status: "queued",
-      scheduledAt: rescheduledAt,
-      nextAttemptAt: rescheduledAt,
-      attemptCount: 0,
-      renderedMessage: "rescheduled body",
-    });
+      expect(second.created).toBe(true);
+      expect(second.record.id).toBe(first.record.id);
+      expect((await store.get(first.record.id))!).toMatchObject({
+        status: "queued",
+        scheduledAt: rescheduledAt,
+        nextAttemptAt: rescheduledAt,
+        attemptCount: 0,
+        renderedMessage: "rescheduled body",
+      });
 
-    clock.set(rescheduledAt);
-    expect(await runDispatchTick(deps)).toMatchObject({ due: 1, sent: 1 });
-    expect(provider.sent[0].message).toBe("rescheduled body");
+      clock.set(rescheduledAt);
+      expect(await runDispatchTick(deps)).toMatchObject({ due: 1, sent: 1 });
+      expect(provider.sent[0].message).toBe("rescheduled body");
+    }
   });
 });
 

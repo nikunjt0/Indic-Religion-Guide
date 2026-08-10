@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DeliveryPreferences } from "../lib/types/companion";
 import { FixedClock } from "../lib/scheduling/clock";
 import { InMemoryDeliveryStore } from "../lib/scheduling/store";
+import { localDateOf } from "../lib/scheduling/time";
 import {
   advanceEnrollment,
   lessonForDay,
@@ -120,6 +121,77 @@ describe("program engine", () => {
     const second = await scheduleCurrentLesson({ store, clock }, args);
     expect(second.created).toBe(false);
     expect(store.records.size).toBe(1);
+  });
+
+  it("moves to the next local day when today's lesson was already sent", async () => {
+    const store = new InMemoryDeliveryStore();
+    const clock = new FixedClock(T0);
+    const e = {
+      ...newEnrollment({ userId: "u1", program: program(), nowMs: T0 }),
+      lastLessonSentAt: T0 - 60_000,
+    };
+    const res = await scheduleCurrentLesson(
+      { store, clock },
+      {
+        enrollment: e,
+        program: program(),
+        prefs: prefs(),
+        recipientHandle: "+13125550100",
+        providerName: "fake",
+      }
+    );
+
+    expect("scheduledAt" in res && res.created).toBe(true);
+    if (!("scheduledAt" in res)) throw new Error("expected scheduled result");
+    expect(localDateOf(res.scheduledAt, "America/Chicago")).toBe("2026-07-31");
+  });
+
+  it("does not report a same-day sent collision as the next queued delivery", async () => {
+    const store = new InMemoryDeliveryStore();
+    const clock = new FixedClock(T0);
+    const e = newEnrollment({ userId: "u1", program: program(), nowMs: T0 });
+    const args = {
+      enrollment: e,
+      program: program(),
+      prefs: prefs(),
+      recipientHandle: "+13125550100",
+      providerName: "fake",
+    };
+    const first = await scheduleCurrentLesson({ store, clock }, args);
+    if (!("scheduledAt" in first)) throw new Error("expected scheduled result");
+    const [sameDayRecord] = [...store.records.values()];
+    await store.update(sameDayRecord.id, { status: "sent", sentAt: first.scheduledAt });
+
+    const second = await scheduleCurrentLesson({ store, clock }, args);
+
+    expect("scheduledAt" in second && second.created).toBe(true);
+    if (!("scheduledAt" in second)) throw new Error("expected scheduled result");
+    expect(localDateOf(second.scheduledAt, "America/Chicago")).toBe("2026-07-31");
+    expect(store.records.size).toBe(2);
+  });
+
+  it("returns an error when the queued delivery cannot be verified after enqueue", async () => {
+    class VanishingStore extends InMemoryDeliveryStore {
+      override async get(): Promise<null> {
+        return null;
+      }
+    }
+    const store = new VanishingStore();
+    const clock = new FixedClock(T0);
+    const e = newEnrollment({ userId: "u1", program: program(), nowMs: T0 });
+
+    const res = await scheduleCurrentLesson(
+      { store, clock },
+      {
+        enrollment: e,
+        program: program(),
+        prefs: prefs(),
+        recipientHandle: "+13125550100",
+        providerName: "fake",
+      }
+    );
+
+    expect(res).toEqual({ created: false, reason: "queued-delivery-not-found" });
   });
 
   it("refuses canceled enrollments and missing lessons", async () => {

@@ -43,6 +43,12 @@ const PROACTIVE_FLAG: Partial<Record<DeliveryType, keyof DeliveryPreferences>> =
   "inactivity-check-in": "inactivityCheckInsEnabled",
 };
 
+const REQUEUEABLE_TERMINAL_STATUSES = new Set<ScheduledDelivery["status"]>([
+  "canceled",
+  "suppressed",
+  "failed",
+]);
+
 export interface EnqueueParams {
   userId: string;
   recipientHandle: string;
@@ -97,11 +103,11 @@ export async function enqueueDelivery(
     updatedAt: now,
   };
   const result = await deps.store.createIfAbsent(record);
-  if (result.created || result.record.status !== "canceled") return result;
+  if (result.created || !REQUEUEABLE_TERMINAL_STATUSES.has(result.record.status)) return result;
 
   // Rescheduling can intentionally cancel and recreate the same logical
   // delivery: same user/enrollment/day/local-date dedup key, new delivery time.
-  // Revive canceled records so the dispatcher can see the new queued work.
+  // Revive unsent terminal records so the dispatcher can see the new queued work.
   const revived: ScheduledDelivery = {
     ...record,
     leaseOwner: null,
