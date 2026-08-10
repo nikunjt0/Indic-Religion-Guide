@@ -4,6 +4,10 @@ export type CompanionToolIntent =
   | { kind: "change-time"; timeText: string }
   | { kind: "start-change-time-flow" }
   | { kind: "show-time" }
+  | { kind: "list-programs" }
+  | { kind: "enroll"; programText: string }
+  | { kind: "show-my-program" }
+  | { kind: "show-help" }
   | { kind: "none" };
 
 interface ToolCallLike {
@@ -25,10 +29,15 @@ interface CompletionLike {
 type CompletionCreate = (body: Record<string, unknown>) => Promise<CompletionLike>;
 
 const TOOL_ROUTER_SYSTEM_PROMPT = `
-You route SMS messages for a Hindu learning companion.
+You route SMS messages for a Hindu learning companion app. The app itself sends
+daily texts: it offers enrollable multi-day programs (like Hinduism 101 or a
+Bhagavad Gita series, one lesson text per day) plus a standalone Daily Dharma
+teaching. Users manage everything — schedule, enrollment, program browsing — by
+texting this same number.
 
-Call a tool only when the user is trying to manage this app's delivery schedule
-or asks to see the current app delivery time.
+Call a tool only when the user is asking about or trying to manage THIS app's
+setup: its delivery schedule, its programs, their enrollment, or how the app
+works.
 
 Use change_delivery_time when the user wants this app to send daily texts,
 messages, lessons, teachings, Hinduism 101, program messages, or course messages
@@ -40,10 +49,25 @@ time but does not include the new time.
 Use show_delivery_schedule when the user asks when this app sends messages or
 what is currently scheduled.
 
+Use list_programs when the user asks what programs, courses, lesson series, or
+daily-message options exist, what they can enroll or subscribe to, or what other
+daily messages they could get. Prefer this over answering from scripture — the
+user is asking what this app offers.
+
+Use enroll_in_program when the user wants to start, join, enroll in, sign up
+for, or switch to a specific program or Daily Dharma.
+
+Use show_my_program when the user asks which program they are in or how far
+along they are.
+
+Use show_app_help when the user asks what this app can do, what commands are
+available, or how to manage their messages (pause, resume, stop, settings).
+
 Do not call a tool for religious, Ayurvedic, ritual, or philosophical questions,
 including questions about auspicious timing, puja timing, Vedic recitation
 timing, meal timing, sleep timing, or daily spiritual practice timing. Those are
-content questions, not app-account actions.
+content questions, not app-account actions. Questions about outside temples,
+gurus, or organizations' offerings are also content questions.
 `.trim();
 
 const TOOL_ROUTER_TOOLS = [
@@ -93,6 +117,64 @@ const TOOL_ROUTER_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "list_programs",
+      description:
+        "List the daily-message programs this app offers and how to enroll.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "enroll_in_program",
+      description:
+        "Enroll the user in (or switch them to) one of this app's programs or Daily Dharma.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          program: {
+            type: "string",
+            description:
+              'The program the user named, as they said it — such as "Hinduism 101", "the Gita one", or "daily dharma".',
+          },
+        },
+        required: ["program"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "show_my_program",
+      description: "Show which program the user is enrolled in and their progress.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "show_app_help",
+      description:
+        "Explain what this app can do and list the commands for managing messages.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+  },
 ] as const;
 
 function parseArgs(argsJson: string | undefined): Record<string, unknown> {
@@ -120,6 +202,17 @@ export function intentFromToolCall(call: ToolCallLike | undefined): CompanionToo
       return { kind: "start-change-time-flow" };
     case "show_delivery_schedule":
       return { kind: "show-time" };
+    case "list_programs":
+      return { kind: "list-programs" };
+    case "enroll_in_program": {
+      const programText = typeof args.program === "string" ? args.program.trim() : "";
+      // No usable program name → show the menu instead of guessing.
+      return programText ? { kind: "enroll", programText } : { kind: "list-programs" };
+    }
+    case "show_my_program":
+      return { kind: "show-my-program" };
+    case "show_app_help":
+      return { kind: "show-help" };
     default:
       return { kind: "none" };
   }
