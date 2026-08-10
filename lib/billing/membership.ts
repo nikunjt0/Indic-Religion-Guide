@@ -34,7 +34,17 @@ export interface BillingState {
  */
 export function hasMessagingAccess(billing: BillingState | null | undefined, nowMs: number): boolean {
   if (!billing) return false;
-  if (billing.status === "trialing" || billing.status === "active") return true;
+  if (billing.status === "trialing" || billing.status === "active") {
+    // A canceled-but-not-yet-ended membership must lapse on time even if the
+    // final customer.subscription.deleted webhook never arrives: once the
+    // user canceled, the stored period end is the hard boundary. Renewing
+    // memberships stay open-ended — a missed renewal webhook must not cut
+    // off a paying member.
+    if (billing.cancelAtPeriodEnd) {
+      return billing.accessUntil === null || billing.accessUntil > nowMs;
+    }
+    return true;
+  }
   if (billing.status === "canceled") {
     return billing.accessUntil !== null && billing.accessUntil > nowMs;
   }

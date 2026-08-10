@@ -649,9 +649,8 @@ async function buildAgentSnapshot(user: CompanionUserDoc): Promise<CompanionAgen
   if (isFreeTestingUser(user)) membershipState = "complimentary";
   else if (!billing || billing.status === "none") membershipState = "none";
   else if (billing.status === "past_due") membershipState = "past-due";
-  else if (billing.status === "canceled")
+  else if (billing.status === "canceled" || billing.cancelAtPeriodEnd)
     membershipState = hasMessagingAccess(billing, now) ? "canceling" : "ended";
-  else if (billing.cancelAtPeriodEnd) membershipState = "canceling";
   else membershipState = billing.status === "trialing" ? "trial" : "active";
   const accessUntilText = billing?.accessUntil
     ? DateTime.fromMillis(billing.accessUntil, { zone: tz }).toFormat("cccc, LLL d")

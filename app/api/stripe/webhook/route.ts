@@ -1,6 +1,7 @@
 import { adminDb } from "@/lib/firebase/admin";
 import { verifyStripeSignature } from "@/lib/billing/webhook";
 import { syncSubscriptionToUser } from "@/lib/billing/sync";
+import { queueMembershipStartedText } from "@/lib/billing/notify";
 
 // Stripe webhook: keeps imessageUsers/{handleId}.billing mirroring the live
 // subscription. checkout.session.completed carries client_reference_id (the
@@ -47,6 +48,9 @@ export async function POST(request: Request) {
         const handleId = object.client_reference_id;
         if (subscriptionId && handleId) {
           await syncSubscriptionToUser(adminDb, { subscriptionId, handleId });
+          // One welcome text per subscription — checkout completion only, so
+          // renewals and other payments never trigger it.
+          await queueMembershipStartedText(adminDb, handleId, subscriptionId);
         } else {
           console.warn("checkout.session.completed without subscription/client_reference_id", {
             session: object.id,
