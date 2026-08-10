@@ -2,8 +2,12 @@ import { DateTime } from "luxon";
 import { imessageUsersCol } from "./firestore.ts";
 import { log } from "./logger.ts";
 import {
+  billingOf,
+  hasFullAccess,
   hasMessagingAccess,
+  isFreeTestingUser,
   type BillingState,
+  type MembershipUserDoc,
 } from "../../lib/billing/membership.ts";
 import {
   billingStateFrom,
@@ -19,19 +23,40 @@ import {
 // the dispatcher and the agent snapshot see it immediately (the webhook would
 // get there too, just seconds later).
 
-export { signupLinkFor };
+export { billingOf, isFreeTestingUser, signupLinkFor };
 
 export const MEMBERSHIP_PRICE_TEXT = "$5/month with a 1-week free trial — cancel anytime";
-
-export function billingOf(user: { billing?: unknown }): BillingState | null {
-  return (user.billing as BillingState | undefined) ?? null;
-}
+const PRODUCT_NAME = "Dharma Companion";
 
 /** Send-time gate for scheduled deliveries (EngineDeps.hasAccess). */
 export async function userHasMessagingAccess(userId: string): Promise<boolean> {
   const snap = await imessageUsersCol().doc(userId).get();
-  const billing = billingOf((snap.data() as { billing?: unknown } | undefined) ?? {});
-  return hasMessagingAccess(billing, Date.now());
+  return hasFullAccess((snap.data() as MembershipUserDoc | undefined) ?? {}, Date.now());
+}
+
+/**
+ * The paywall reply for a guru question from someone without access (and not
+ * a comped tester). Returns null when access is fine — or when no payment
+ * link is configured, in which case we fail open rather than lock everyone
+ * out with no way to subscribe.
+ */
+export function membershipRequiredMessage(
+  user: MembershipUserDoc & { handleId: string }
+): string | null {
+  if (hasFullAccess(user, Date.now())) return null;
+  const link = signupLinkFor(user.handleId);
+  if (!link) return null;
+  const billing = billingOf(user);
+  if (!billing || billing.status === "none") {
+    return (
+      `Namaste 🙏 Asking me questions and daily teachings are part of ${PRODUCT_NAME} — ` +
+      `${MEMBERSHIP_PRICE_TEXT}. Start your free week here (Apple Pay works): ${link}`
+    );
+  }
+  return (
+    `Your ${PRODUCT_NAME} membership has ended, so I can't answer questions or send teachings ` +
+    `right now — your progress is saved. Restart anytime (${MEMBERSHIP_PRICE_TEXT}): ${link}`
+  );
 }
 
 function formatDay(ms: number, timezone: string): string {
