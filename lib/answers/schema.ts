@@ -96,9 +96,21 @@ export function validateStructuredAnswer(
   return { ok: true, answer: result.data };
 }
 
+// Follow-up options are internal facets of the answer; users are invited in
+// plain words ("Want the sources? Just ask."), never with keyword commands —
+// there is no deterministic keyword router behind these anymore.
+const FOLLOW_UP_PHRASES: Record<StructuredAnswer["followUpOptions"][number], string> = {
+  DEEPER: "to go deeper",
+  SOURCE: "the exact passages",
+  KIDS: "a version for kids",
+  COMPARE: "to see how traditions compare",
+  PRACTICE: "a practice to try",
+  STORY: "the story behind it",
+};
+
 /**
  * Render the SMS body from a validated answer: answer first, one idea, source
- * label, at most three follow-up options.
+ * label, at most three follow-up facets offered in plain words.
  */
 export function renderSmsAnswer(answer: StructuredAnswer): string {
   const parts: string[] = [answer.shortTextVersion.trim()];
@@ -109,7 +121,12 @@ export function renderSmsAnswer(answer: StructuredAnswer): string {
     );
   }
   if (answer.followUpOptions.length > 0) {
-    parts.push(`Reply ${answer.followUpOptions.join(", ")}.`);
+    const phrases = answer.followUpOptions.map((o) => FOLLOW_UP_PHRASES[o]);
+    const list =
+      phrases.length === 1
+        ? phrases[0]
+        : `${phrases.slice(0, -1).join(", ")} or ${phrases[phrases.length - 1]}`;
+    parts.push(`Want ${list}? Just ask.`);
   }
   return parts.join("\n\n");
 }

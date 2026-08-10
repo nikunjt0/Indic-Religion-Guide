@@ -10,8 +10,8 @@ import {
 
 describe("RAG response style policy", () => {
   it("is shared by web and SMS system prompts", () => {
-    expect(PROMPT_VERSION).toBe("v10-synthesis");
-    expect(PROMPT_VERSION_SMS).toBe("v5-synthesis-sms");
+    expect(PROMPT_VERSION).toBe("v11-natural-followups");
+    expect(PROMPT_VERSION_SMS).toBe("v6-natural-followups-sms");
     expect(RESPONSE_STYLE_POLICY).toContain("Synthesize first");
     expect(RESPONSE_STYLE_POLICY).toContain("at most 1 short direct quote");
     expect(RESPONSE_STYLE_POLICY).toContain("Explain unfamiliar concepts immediately");

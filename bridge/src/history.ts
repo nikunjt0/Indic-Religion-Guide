@@ -22,6 +22,33 @@ export async function loadRecentMessages(handleId: string): Promise<ChatMessage[
   return data.messages.slice(-config.maxHistoryMessages);
 }
 
+/**
+ * Record a message we sent without a triggering user turn (scheduled lessons,
+ * Daily Dharma). Keeping these in history is what lets a later "deeper" or
+ * "who is Shiva?" be understood in context by the agent and the guru.
+ */
+export async function appendAssistantMessage(
+  handleId: string,
+  content: string,
+): Promise<void> {
+  const now = Date.now();
+  const ref = chatRef(handleId);
+  const snap = await ref.get();
+  const existing = snap.exists ? (snap.data() as ChatDoc) : null;
+  const next: ChatDoc = {
+    id: CHAT_ID,
+    uid: handleId,
+    title: existing?.title ?? "iMessage",
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    messages: [
+      ...(existing?.messages ?? []),
+      { role: "assistant", content, timestamp: now },
+    ],
+  };
+  await ref.set(next, { merge: true });
+}
+
 export async function appendTurn(
   handleId: string,
   userTurn: { content: string },

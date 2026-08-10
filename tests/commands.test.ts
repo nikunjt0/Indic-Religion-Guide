@@ -25,11 +25,17 @@ describe("parseCommand", () => {
     expect(parseCommand("pause a week")).toEqual({ kind: "pause", days: 7 });
   });
 
-  it("detects lesson reply keywords", () => {
-    expect(parseCommand("deeper")).toEqual({ kind: "deeper" });
-    expect(parseCommand("KIDS")).toEqual({ kind: "kids" });
-    expect(parseCommand("Source?")).toEqual({ kind: "source" });
-    expect(parseCommand("story")).toEqual({ kind: "story" });
+  it("leaves content continuations to the conversational layer", () => {
+    // "deeper" after a lesson and "deeper" after a Q&A answer mean different
+    // things — a deterministic keyword can't tell which the user means, so
+    // these must NOT parse as commands.
+    expect(parseCommand("deeper")).toBeNull();
+    expect(parseCommand("more")).toBeNull();
+    expect(parseCommand("KIDS")).toBeNull();
+    expect(parseCommand("Source?")).toBeNull();
+    expect(parseCommand("story")).toBeNull();
+    expect(parseCommand("practice")).toBeNull();
+    expect(parseCommand("simpler")).toBeNull();
   });
 
   it("detects natural-language delivery time changes", () => {

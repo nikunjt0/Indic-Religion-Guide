@@ -9,7 +9,7 @@ import {
   type CompanionAgentSnapshot,
   type CompanionToolExecutor,
 } from "../../lib/companion/agent.ts";
-import { appendTurn, loadRecentMessages } from "./history.ts";
+import { appendAssistantMessage, appendTurn, loadRecentMessages } from "./history.ts";
 import {
   currentPrompt,
   stepOnboarding,
@@ -119,6 +119,15 @@ const engineDeps: EngineDeps = {
   hasAccess: (userId) => userHasMessagingAccess(userId),
   renderMessage: async (d) => renderQueuedMessage(d),
   onSent: async (d, result) => {
+    // Scheduled sends must land in conversation history too — otherwise the
+    // agent and the guru have no idea a lesson was ever delivered, and a
+    // follow-up like "deeper" or "who is Shiva?" loses its referent.
+    try {
+      const body = d.renderedMessage ?? (await renderQueuedMessage(d));
+      if (body) await appendAssistantMessage(d.userId, body);
+    } catch (err) {
+      log.error("failed to append delivered message to history:", err);
+    }
     await recordOutboundEvent(adminDb, {
       id: `out-${d.id}`,
       userId: d.userId,
@@ -478,9 +487,10 @@ export async function beginOnboardingV2(
 export interface CompanionInboundResult {
   handled: boolean;
   /**
-   * Set when the agent already replied to the account part of a mixed message
-   * and extracted the remaining scripture question for the RAG guru. The
-   * caller should answer this question instead of the raw inbound text.
+   * The standalone question the RAG guru should answer instead of the raw
+   * inbound text. Set when the agent replied to the account part of a mixed
+   * message and extracted the rest, or when it reworded a contextual
+   * follow-up ("deeper") into a question that stands alone.
    */
   guruQuestion?: string;
 }
@@ -535,9 +545,11 @@ export async function handleCompanionInbound(
     // Not a time — fall through (maybe it's a question or a command).
   }
 
-  // Exact keyword commands (STOP, DELETE MY DATA, PAUSE, DEEPER, …) stay
-  // deterministic: compliance keywords must never depend on a model, and the
-  // rest are documented single-word replies.
+  // Exact keyword commands (STOP, DELETE MY DATA, PAUSE, …) stay
+  // deterministic: compliance keywords must never depend on a model. Content
+  // continuations ("deeper", "kids", "source", …) are deliberately NOT
+  // commands — they're ambiguous between the last lesson and the last answer,
+  // so the conversational layer below resolves them from chat history.
   const cmd = parseCommand(text);
   if (cmd) {
     await handleCommand(user, chatGuid, cmd);
@@ -563,7 +575,9 @@ export async function handleCompanionInbound(
       snapshot,
       executor: agentExecutor(user),
     });
-    if (result.kind === "pass-to-guru") return { handled: false };
+    if (result.kind === "pass-to-guru") {
+      return { handled: false, guruQuestion: result.question };
+    }
     if (result.text) {
       await reply(chatGuid, [result.text]);
       await appendTurn(user.handleId, { content: text }, { content: result.text });
@@ -1219,9 +1233,9 @@ async function handleCommand(
           `PAUSE / PAUSE 7 DAYS, RESUME, STOP, START\n` +
           `TIME, CHANGE TIME — delivery schedule\n` +
           `PROGRAMS, MY PROGRAM, SKIP, RESTART\n` +
-          `DEEPER, KIDS, SOURCE — more on today's lesson\n` +
           `SAVE — save today's teaching. SETTINGS — your setup.\n` +
-          `Or just ask any question about Hindu practice, scripture, or festivals.`,
+          `And just talk to me in your own words — ask any question, or ask for ` +
+          `more on any teaching: the deeper meaning, a version for kids, the sources.`,
       ]);
       return;
     }
@@ -1381,33 +1395,6 @@ async function handleCommand(
       return;
     }
 
-    case "deeper":
-    case "kids":
-    case "source":
-    case "story":
-    case "practice": {
-      const lesson = await lastDeliveredLesson(userId);
-      if (!lesson) {
-        await reply(chatGuid, [
-          "No recent lesson to expand on — but ask me anything and I'll answer with sources.",
-        ]);
-        return;
-      }
-      const body =
-        cmd.kind === "deeper" || cmd.kind === "story"
-          ? lesson.lesson.deeperMessage
-          : cmd.kind === "kids"
-            ? lesson.lesson.childMessage
-            : cmd.kind === "source"
-              ? lesson.lesson.sourceNote
-              : lesson.lesson.practicalAction;
-      await reply(chatGuid, [
-        body ??
-          `I don't have a ${cmd.kind.toUpperCase()} version for “${lesson.lesson.title}” yet — try DEEPER or SOURCE.`,
-      ]);
-      return;
-    }
-
     case "save": {
       const lesson = await lastDeliveredLesson(userId);
       if (!lesson) {
@@ -1477,14 +1464,6 @@ async function handleCommand(
       await reply(chatGuid, [
         "Understood. All scheduled messages are stopped and your account is marked for deletion — your conversation history and profile will be removed within 30 days. Reply START before then if you change your mind.",
       ]);
-      return;
-    }
-
-    case "simple": {
-      await reply(chatGuid, [
-        "Got it — I'll keep answers short and plain. (Reply DEEPER on any lesson when you want more.)",
-      ]);
-      await imessageUsersCol().doc(userId).set({ explanationDepth: "concise" }, { merge: true });
       return;
     }
 

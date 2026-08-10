@@ -76,12 +76,12 @@ describe("structured answer schema", () => {
     expect(validateStructuredAnswer(bad).ok).toBe(false);
   });
 
-  it("renders SMS: answer first, source label, reply options", () => {
+  it("renders SMS: answer first, source label, natural follow-up invitation", () => {
     const parsed = validateStructuredAnswer(valid);
     if (!parsed.ok) throw new Error("expected valid");
     const sms = renderSmsAnswer(parsed.answer);
     expect(sms.startsWith("Karma means action")).toBe(true);
     expect(sms).toContain("Source: Bhagavad Gita (2.47)");
-    expect(sms).toContain("Reply DEEPER, KIDS.");
+    expect(sms).toContain("Want to go deeper or a version for kids? Just ask.");
   });
 });

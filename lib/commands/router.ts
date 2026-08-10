@@ -3,6 +3,12 @@ import { parseUserTimeInputDetailed } from "../scheduling/time";
 // Deterministic inbound command router. Runs BEFORE any LLM sees the message.
 // Legally/operationally significant commands (STOP, DELETE MY DATA) must
 // never rely on model classification.
+//
+// Deliberately NOT here: content continuations like "deeper", "more", "kids",
+// "source", "story", "practice", "simpler". Those are ambiguous — they can
+// refer to a delivered lesson, a Daily Dharma teaching, or the guru's last
+// answer — so they go to the conversational layer, which resolves them from
+// chat history instead of always hijacking them to the last lesson.
 
 export type Command =
   | { kind: "start"; immediate: boolean }
@@ -16,12 +22,6 @@ export type Command =
   | { kind: "my-program" }
   | { kind: "restart" }
   | { kind: "skip" }
-  | { kind: "deeper" }
-  | { kind: "simple" }
-  | { kind: "kids" }
-  | { kind: "source" }
-  | { kind: "practice" }
-  | { kind: "story" }
   | { kind: "save" }
   | { kind: "unsave" }
   | { kind: "settings" }
@@ -68,16 +68,6 @@ const EXACT: Record<string, Command> = {
   "my program": { kind: "my-program" },
   restart: { kind: "restart" },
   skip: { kind: "skip" },
-  deeper: { kind: "deeper" },
-  more: { kind: "deeper" },
-  simple: { kind: "simple" },
-  simpler: { kind: "simple" },
-  kids: { kind: "kids" },
-  kid: { kind: "kids" },
-  source: { kind: "source" },
-  sources: { kind: "source" },
-  practice: { kind: "practice" },
-  story: { kind: "story" },
   save: { kind: "save" },
   unsave: { kind: "unsave" },
   settings: { kind: "settings" },
