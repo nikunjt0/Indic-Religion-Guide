@@ -8,6 +8,7 @@ import type { Clock } from "../scheduling/clock";
 import type { DeliveryStore } from "../scheduling/store";
 import { enqueueDelivery } from "../scheduling/engine";
 import { localDateOf, nextOccurrence } from "../scheduling/time";
+import { DateTime } from "luxon";
 
 export interface ProgramWithLessons extends Program {
   lessons: ProgramLesson[];
@@ -56,6 +57,12 @@ export interface ScheduleLessonParams {
   immediate?: boolean;
 }
 
+export interface ScheduledLessonResult {
+  created: boolean;
+  deliveryId: string;
+  scheduledAt: number;
+}
+
 /**
  * Enqueue the delivery for the enrollment's current day. Idempotent thanks to
  * the deterministic dedup key (enrollment + day + local date).
@@ -63,46 +70,78 @@ export interface ScheduleLessonParams {
 export async function scheduleCurrentLesson(
   deps: { store: DeliveryStore; clock: Clock },
   params: ScheduleLessonParams
-): Promise<{ created: boolean; scheduledAt: number } | { created: false; reason: string }> {
+): Promise<ScheduledLessonResult | { created: false; reason: string }> {
   const { enrollment, program, prefs } = params;
   if (enrollment.status !== "active") return { created: false, reason: "enrollment-not-active" };
   const lesson = lessonForDay(program, enrollment.currentDay);
   if (!lesson) return { created: false, reason: "missing-lesson" };
 
   const now = deps.clock.now();
-  let scheduledAt: number;
-  let scheduledLocalDate: string;
-  if (params.immediate) {
-    scheduledAt = now;
-    scheduledLocalDate = localDateOf(now, prefs.timezone);
-  } else {
-    const next = nextOccurrence(
-      {
-        timezone: prefs.timezone,
-        preferredLocalTime: prefs.preferredLocalTime,
-        deliveryDays: prefs.deliveryDays,
-      },
-      now
-    );
-    scheduledAt = next.atMs;
-    scheduledLocalDate = next.localDate;
+  const today = localDateOf(now, prefs.timezone);
+  const lastSentToday =
+    !params.immediate &&
+    enrollment.lastLessonSentAt !== undefined &&
+    localDateOf(enrollment.lastLessonSentAt, prefs.timezone) === today;
+
+  let afterMs = lastSentToday ? endOfLocalDay(today, prefs.timezone) : now;
+  for (let attempt = 0; attempt < 9; attempt++) {
+    const { scheduledAt, scheduledLocalDate } = params.immediate
+      ? { scheduledAt: now, scheduledLocalDate: localDateOf(now, prefs.timezone) }
+      : nextScheduledOccurrence(prefs, afterMs);
+
+    const result = await enqueueDelivery(deps, {
+      userId: enrollment.userId,
+      recipientHandle: params.recipientHandle,
+      recipientChatGuid: params.recipientChatGuid,
+      provider: params.providerName,
+      deliveryType: "program-lesson",
+      programId: program.slug,
+      enrollmentId: enrollment.id,
+      lessonDay: lesson.dayNumber,
+      scheduledAt,
+      scheduledLocalDate,
+      timezone: prefs.timezone,
+      renderedMessage: lesson.standardMessage,
+    });
+
+    if (result.record.status === "sent" && !params.immediate) {
+      afterMs = endOfLocalDay(result.record.scheduledLocalDate, prefs.timezone);
+      continue;
+    }
+
+    const stored = await deps.store.get(result.record.id);
+    if (!stored) return { created: false, reason: "queued-delivery-not-found" };
+    if (!["queued", "retry", "claimed"].includes(stored.status)) {
+      return { created: false, reason: `queued-delivery-not-claimable:${stored.status}` };
+    }
+
+    return {
+      created: result.created,
+      deliveryId: stored.id,
+      scheduledAt: stored.scheduledAt,
+    };
   }
 
-  const result = await enqueueDelivery(deps, {
-    userId: enrollment.userId,
-    recipientHandle: params.recipientHandle,
-    recipientChatGuid: params.recipientChatGuid,
-    provider: params.providerName,
-    deliveryType: "program-lesson",
-    programId: program.slug,
-    enrollmentId: enrollment.id,
-    lessonDay: lesson.dayNumber,
-    scheduledAt,
-    scheduledLocalDate,
-    timezone: prefs.timezone,
-    renderedMessage: lesson.standardMessage,
-  });
-  return { created: result.created, scheduledAt };
+  return { created: false, reason: "no-open-local-date" };
+}
+
+function nextScheduledOccurrence(
+  prefs: DeliveryPreferences,
+  afterMs: number
+): { scheduledAt: number; scheduledLocalDate: string } {
+  const next = nextOccurrence(
+    {
+      timezone: prefs.timezone,
+      preferredLocalTime: prefs.preferredLocalTime,
+      deliveryDays: prefs.deliveryDays,
+    },
+    afterMs
+  );
+  return { scheduledAt: next.atMs, scheduledLocalDate: next.localDate };
+}
+
+function endOfLocalDay(localDate: string, timezone: string): number {
+  return DateTime.fromISO(localDate, { zone: timezone }).endOf("day").toMillis();
 }
 
 export function newEnrollment(params: {

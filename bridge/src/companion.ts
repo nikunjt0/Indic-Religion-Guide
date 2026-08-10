@@ -885,7 +885,7 @@ async function handleCommand(
 async function rescheduleActive(
   user: CompanionUserDoc,
   immediate: boolean
-): Promise<{ day: number; when: string } | null> {
+): Promise<{ day: number; when: string; deliveryId: string } | null> {
   const enrollment = await getActiveEnrollment(adminDb, user.handleId);
   if (!enrollment) return null;
   const program = getProgram(enrollment.programId);
@@ -903,6 +903,7 @@ async function rescheduleActive(
   if (!("scheduledAt" in res)) return null;
   return {
     day: enrollment.currentDay,
+    deliveryId: res.deliveryId,
     when: DateTime.fromMillis(res.scheduledAt, { zone: prefs.timezone }).toFormat(
       "cccc 'at' h:mm a"
     ),
@@ -918,11 +919,33 @@ async function changeDeliveryTime(
     preferredLocalTime: time,
     lastPreferenceChangeAt: Date.now(),
   });
+  const activeEnrollment = await getActiveEnrollment(adminDb, user.handleId);
   // Cancel unsent recurring deliveries, keep history, recalculate.
-  await cancelPendingDeliveries(engineDeps, user.handleId, ["program-lesson", "daily-dharma"]);
+  const canceled = await cancelPendingDeliveries(engineDeps, user.handleId, [
+    "program-lesson",
+    "daily-dharma",
+  ]);
   const res = await rescheduleActive(user, false);
   const prefs = await getPreferences(adminDb, user.handleId);
   if (prefs?.dailyDharmaEnabled) await scheduleNextDailyDharma(user.handleId);
+  log.info("delivery time changed", {
+    userId: user.handleId,
+    preferredLocalTime: time,
+    canceledPending: canceled,
+    nextLesson: res,
+    dailyDharmaEnabled: prefs?.dailyDharmaEnabled ?? false,
+  });
+  if (activeEnrollment && !res) {
+    log.error("delivery time change could not verify queued lesson", {
+      userId: user.handleId,
+      preferredLocalTime: time,
+      canceledPending: canceled,
+    });
+    await reply(chatGuid, [
+      "I updated your preferred time, but I could not verify the next lesson in the delivery queue. I’m not marking this confirmed. Please try CHANGE TIME again in a minute.",
+    ]);
+    return;
+  }
   await reply(chatGuid, [
     `Done — your messages now arrive at ${prefs ? formatPrefTime(prefs) : time}.` +
       (res ? ` Next lesson: ${res.when}.` : ""),
