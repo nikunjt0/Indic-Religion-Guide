@@ -76,6 +76,12 @@ export async function scheduleCurrentLesson(
   const lesson = lessonForDay(program, enrollment.currentDay);
   if (!lesson) return { created: false, reason: "missing-lesson" };
 
+  // Per-program delivery time: an enrollment's own time wins over the base
+  // preference, so two concurrent programs can arrive at different hours.
+  const effectivePrefs = enrollment.preferredLocalTime
+    ? { ...prefs, preferredLocalTime: enrollment.preferredLocalTime }
+    : prefs;
+
   const now = deps.clock.now();
   const today = localDateOf(now, prefs.timezone);
   const lastSentToday =
@@ -87,7 +93,7 @@ export async function scheduleCurrentLesson(
   for (let attempt = 0; attempt < 9; attempt++) {
     const { scheduledAt, scheduledLocalDate } = params.immediate
       ? { scheduledAt: now, scheduledLocalDate: localDateOf(now, prefs.timezone) }
-      : nextScheduledOccurrence(prefs, afterMs);
+      : nextScheduledOccurrence(effectivePrefs, afterMs);
 
     const result = await enqueueDelivery(deps, {
       userId: enrollment.userId,
@@ -149,6 +155,8 @@ export function newEnrollment(params: {
   program: ProgramWithLessons;
   nowMs: number;
   source?: string;
+  /** "HH:mm" per-program delivery time; omit to use the base preference. */
+  preferredLocalTime?: string;
 }): Enrollment {
   const { userId, program, nowMs } = params;
   return {
@@ -159,6 +167,9 @@ export function newEnrollment(params: {
     status: "active",
     currentDay: 1,
     startedAt: nowMs,
+    // Always written (null = base time) so a re-enrollment's merge-write
+    // can't inherit a stale per-program time from a previous run.
+    preferredLocalTime: params.preferredLocalTime ?? null,
     completedLessonDays: [],
     skippedLessonDays: [],
     enrollmentSource: params.source,

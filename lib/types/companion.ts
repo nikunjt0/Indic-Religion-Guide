@@ -23,6 +23,8 @@ export interface DeliveryPreferences {
   pausedUntil?: number | null; // epoch ms; null/absent = not paused; Infinity is stored as PAUSED_INDEFINITELY
   pauseReason?: string;
   dailyDharmaEnabled: boolean;
+  /** "HH:mm" — Daily Dharma delivery time; falls back to preferredLocalTime. */
+  dailyDharmaLocalTime?: string | null;
   programMessagesEnabled: boolean;
   festivalMessagesEnabled: boolean;
   weeklyRecapEnabled: boolean;
@@ -101,6 +103,8 @@ export interface Enrollment {
   status: EnrollmentStatus;
   /** Day number of the next lesson to deliver (1-based). */
   currentDay: number;
+  /** "HH:mm" — per-program delivery time; falls back to preferredLocalTime. */
+  preferredLocalTime?: string | null;
   startedAt: number;
   nextLessonAt?: number | null;
   lastLessonSentAt?: number;

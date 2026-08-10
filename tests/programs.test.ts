@@ -106,6 +106,46 @@ describe("program engine", () => {
     expect(record.lessonDay).toBe(1);
   });
 
+  it("honors a per-enrollment delivery time over the base preference", async () => {
+    const store = new InMemoryDeliveryStore();
+    const clock = new FixedClock(T0); // 07:00 America/Chicago
+    const e = {
+      ...newEnrollment({ userId: "u1", program: program(), nowMs: T0 }),
+      preferredLocalTime: "21:15",
+    };
+    const res = await scheduleCurrentLesson(
+      { store, clock },
+      {
+        enrollment: e,
+        program: program(),
+        prefs: prefs(), // base preference is 07:30
+        recipientHandle: "+13125550100",
+        providerName: "fake",
+      }
+    );
+    expect("scheduledAt" in res && res.created).toBe(true);
+    if (!("scheduledAt" in res)) throw new Error("expected scheduled result");
+    const local = new Date(res.scheduledAt).toLocaleTimeString("en-US", {
+      timeZone: "America/Chicago",
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    expect(local).toBe("21:15");
+  });
+
+  it("newEnrollment records the per-program time explicitly (null = base time)", () => {
+    const withTime = newEnrollment({
+      userId: "u1",
+      program: program(),
+      nowMs: T0,
+      preferredLocalTime: "09:00",
+    });
+    expect(withTime.preferredLocalTime).toBe("09:00");
+    const withoutTime = newEnrollment({ userId: "u1", program: program(), nowMs: T0 });
+    expect(withoutTime.preferredLocalTime).toBeNull();
+  });
+
   it("re-scheduling the same day is a no-op (no duplicate lesson)", async () => {
     const store = new InMemoryDeliveryStore();
     const clock = new FixedClock(T0);
