@@ -41,6 +41,34 @@ export function hasMessagingAccess(billing: BillingState | null | undefined, now
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// User-doc level access (billing + the operator-set free-tester flag)
+// ---------------------------------------------------------------------------
+
+/** The membership-relevant shape of an imessageUsers doc. */
+export interface MembershipUserDoc {
+  billing?: unknown;
+  /**
+   * Operator-set comp flag (flip it in the Firestore console). true = full
+   * access — guru questions and scheduled teachings — without paying.
+   * Defaults to false on creation; absent counts as false.
+   */
+  freeTestingUser?: unknown;
+}
+
+export function billingOf(user: MembershipUserDoc): BillingState | null {
+  return (user.billing as BillingState | undefined) ?? null;
+}
+
+export function isFreeTestingUser(user: MembershipUserDoc): boolean {
+  return user.freeTestingUser === true;
+}
+
+/** Full product access: comped testers, else an active trial/subscription. */
+export function hasFullAccess(user: MembershipUserDoc, nowMs: number): boolean {
+  return isFreeTestingUser(user) || hasMessagingAccess(billingOf(user), nowMs);
+}
+
 /** Map a raw Stripe subscription status onto our stored status. */
 export function membershipStatusFromStripe(stripeStatus: string): MembershipStatus {
   switch (stripeStatus) {

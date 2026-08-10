@@ -60,11 +60,12 @@ import {
   MEMBERSHIP_PRICE_TEXT,
   billingOf,
   cancelMembership,
+  isFreeTestingUser,
   resumeMembership,
   signupLinkFor,
   userHasMessagingAccess,
 } from "./billing.ts";
-import { hasMessagingAccess } from "../../lib/billing/membership.ts";
+import { hasFullAccess, hasMessagingAccess } from "../../lib/billing/membership.ts";
 import { DateTime } from "luxon";
 
 // Companion runtime for the bridge: the delivery dispatcher, deterministic
@@ -357,7 +358,14 @@ async function sendMembershipLapseNote(d: ScheduledDelivery): Promise<void> {
   if (!link) return; // no payment link configured — nothing useful to say
   const ref = imessageUsersCol().doc(d.userId);
   const snap = await ref.get();
-  const user = (snap.data() ?? {}) as { membershipEndNoticeSent?: boolean; billing?: unknown };
+  const user = (snap.data() ?? {}) as {
+    membershipEndNoticeSent?: boolean;
+    billing?: unknown;
+    freeTestingUser?: boolean;
+  };
+  // A comped tester should never be suppressed for membership, but if the
+  // flag was flipped between claim and suppression, stay silent.
+  if (user.freeTestingUser === true) return;
   if (user.membershipEndNoticeSent) return;
   await ref.set({ membershipEndNoticeSent: true, updatedAt: Date.now() }, { merge: true });
   const billing = billingOf(user);
@@ -410,15 +418,19 @@ interface CompanionUserDoc {
   accountStatus?: string;
   /** Synced mirror of the Stripe subscription (lib/billing/membership.ts). */
   billing?: unknown;
+  /** Operator comp flag — full access without paying. Default false. */
+  freeTestingUser?: boolean;
   membershipEndNoticeSent?: boolean;
   [key: string]: unknown;
 }
 
-function obCtx(userId?: string): OnboardingContext {
+function obCtx(user?: CompanionUserDoc): OnboardingContext {
+  // Comped testers never see pricing or a signup link.
+  const wantsPricing = user && !isFreeTestingUser(user);
   return {
     productName: PRODUCT_NAME,
     defaultTimezone: DEFAULT_TZ,
-    ...(userId ? { signupUrl: signupLinkFor(userId) } : {}),
+    ...(wantsPricing ? { signupUrl: signupLinkFor(user.handleId) } : {}),
   };
 }
 
@@ -459,7 +471,7 @@ export async function beginOnboardingV2(
       preferredLocalTime: "07:30",
       createdAt: Date.now(),
     });
-    const signupUrl = signupLinkFor(user.handleId);
+    const signupUrl = isFreeTestingUser(user) ? null : signupLinkFor(user.handleId);
     await reply(chatGuid, [
       `Namaste, and welcome! 🙏 I'm your Hindu Guru — a daily learning companion grounded in scripture. ` +
         `I'm trained on the Bhagavad Gita, the Upanishads, the Ramayana and Mahabharata, the Puranas, ` +
@@ -481,7 +493,7 @@ export async function beginOnboardingV2(
     { onboardingV2State: "awaiting-consent", chatGuid, updatedAt: Date.now() },
     { merge: true }
   );
-  await reply(chatGuid, [welcomeMessage(obCtx(user.handleId))]);
+  await reply(chatGuid, [welcomeMessage(obCtx(user))]);
 }
 
 export interface CompanionInboundResult {
@@ -510,11 +522,11 @@ export async function handleCompanionInbound(
   // Onboarding v2 in progress.
   const obState = user.onboardingV2State;
   if (obState && obState !== "completed") {
-    const result = stepOnboarding(obState, text, obCtx(user.handleId));
+    const result = stepOnboarding(obState, text, obCtx(user));
     if (result.deflected) {
       // Real question mid-onboarding: let RAG answer, then re-prompt.
       await userRef.set({ onboardingV2State: result.nextState }, { merge: true });
-      queueReprompt(user.handleId, chatGuid, result.nextState);
+      queueReprompt(user, chatGuid, result.nextState);
       return { handled: false };
     }
     await applyOnboardingStep(
@@ -616,7 +628,8 @@ async function buildAgentSnapshot(user: CompanionUserDoc): Promise<CompanionAgen
   const billing = billingOf(user);
   const now = Date.now();
   let membershipState: CompanionAgentSnapshot["membership"]["state"];
-  if (!billing || billing.status === "none") membershipState = "none";
+  if (isFreeTestingUser(user)) membershipState = "complimentary";
+  else if (!billing || billing.status === "none") membershipState = "none";
   else if (billing.status === "past_due") membershipState = "past-due";
   else if (billing.status === "canceled")
     membershipState = hasMessagingAccess(billing, now) ? "canceling" : "ended";
@@ -986,14 +999,15 @@ function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
 const repromptTimers = new Map<string, NodeJS.Timeout>();
 
 /** After RAG answers a mid-onboarding question, gently resume the flow. */
-function queueReprompt(userId: string, chatGuid: string, state: OnboardingState): void {
+function queueReprompt(user: CompanionUserDoc, chatGuid: string, state: OnboardingState): void {
+  const userId = user.handleId;
   const existing = repromptTimers.get(userId);
   if (existing) clearTimeout(existing);
   repromptTimers.set(
     userId,
     setTimeout(() => {
       repromptTimers.delete(userId);
-      const prompt = currentPrompt(state, obCtx(userId));
+      const prompt = currentPrompt(state, obCtx(user));
       if (prompt) void reply(chatGuid, [`Back to getting you set up:\n\n${prompt}`]);
     }, 20_000)
   );
@@ -1073,7 +1087,7 @@ async function finishOnboarding(
   const latest = (await imessageUsersCol().doc(user.handleId).get()).data() ?? {};
   const signupUrl = signupLinkFor(user.handleId);
   const trialNudge =
-    !hasMessagingAccess(billingOf(latest as { billing?: unknown }), Date.now()) && signupUrl
+    !hasFullAccess(latest, Date.now()) && signupUrl
       ? `One more thing: daily texts begin once your free week is active — ` +
         `${MEMBERSHIP_PRICE_TEXT}. Start here (Apple Pay works): ${signupUrl}`
       : null;

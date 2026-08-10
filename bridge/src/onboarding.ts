@@ -17,6 +17,10 @@ export interface IMessageUser extends Partial<UserProfile> {
   handle: string;
   chatGuid?: string;
   onboardingState: OnboardingState;
+  /** Operator comp flag — full access without paying. Default false. */
+  freeTestingUser?: boolean;
+  /** Synced mirror of the Stripe subscription (lib/billing/membership.ts). */
+  billing?: unknown;
 }
 
 export async function getOrCreate(
@@ -40,6 +44,7 @@ export async function getOrCreate(
     handle,
     chatGuid,
     onboardingState: "intro",
+    freeTestingUser: false,
     traditions: ["hindu"],
     traditionPreference: "hindu",
     experienceLevel: "beginner",

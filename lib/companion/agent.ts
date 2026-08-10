@@ -50,7 +50,7 @@ export interface CompanionAgentSnapshot {
   /** e.g. "Monday, Aug 10, 11:20 AM CDT" in the user's timezone. */
   localNowText?: string;
   membership: {
-    state: "none" | "trial" | "active" | "canceling" | "past-due" | "ended";
+    state: "none" | "trial" | "active" | "canceling" | "past-due" | "ended" | "complimentary";
     /** e.g. "$5/month with a 1-week free trial — cancel anytime". */
     priceText: string;
     /** Last day of access (canceling/ended), e.g. "Sunday, Aug 17". */
@@ -163,6 +163,11 @@ export function buildCompanionSystemPrompt(s: CompanionAgentSnapshot): string {
     case "none":
       account.push(
         "Membership: not started yet — scheduled teachings begin once they start their free trial"
+      );
+      break;
+    case "complimentary":
+      account.push(
+        "Membership: complimentary — they have full access on the house. Never bring up pricing, billing, trials, or signup links with them."
       );
       break;
   }

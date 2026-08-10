@@ -174,6 +174,20 @@ describe("companion agent system prompt", () => {
     );
   });
 
+  it("tells the model a complimentary account never hears about billing", () => {
+    const prompt = buildCompanionSystemPrompt(
+      snapshot({
+        membership: {
+          state: "complimentary",
+          priceText: "$5/month with a 1-week free trial — cancel anytime",
+        },
+      })
+    );
+    expect(prompt).toContain("Membership: complimentary");
+    expect(prompt).toContain("Never bring up pricing");
+    expect(prompt).not.toContain("buy.stripe.com");
+  });
+
   it("tells the model when the user is opted out or not set up", () => {
     expect(
       buildCompanionSystemPrompt(snapshot({ optedOut: true, consentGranted: false }))

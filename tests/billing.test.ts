@@ -1,7 +1,9 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  hasFullAccess,
   hasMessagingAccess,
+  isFreeTestingUser,
   membershipStatusFromStripe,
   type BillingState,
 } from "../lib/billing/membership";
@@ -54,6 +56,31 @@ describe("hasMessagingAccess", () => {
 
   it("denies past_due until payment recovers", () => {
     expect(hasMessagingAccess(billing({ status: "past_due" }), NOW)).toBe(false);
+  });
+});
+
+describe("hasFullAccess (freeTestingUser comp flag)", () => {
+  it("grants comped testers regardless of billing", () => {
+    expect(hasFullAccess({ freeTestingUser: true }, NOW)).toBe(true);
+    expect(
+      hasFullAccess(
+        { freeTestingUser: true, billing: billing({ status: "canceled", accessUntil: NOW - DAY }) },
+        NOW
+      )
+    ).toBe(true);
+  });
+
+  it("treats absent or non-true flag values as false", () => {
+    expect(hasFullAccess({}, NOW)).toBe(false);
+    expect(hasFullAccess({ freeTestingUser: false }, NOW)).toBe(false);
+    // Firestore console typos ("true" as a string) must not grant access.
+    expect(hasFullAccess({ freeTestingUser: "true" }, NOW)).toBe(false);
+    expect(isFreeTestingUser({ freeTestingUser: 1 })).toBe(false);
+  });
+
+  it("falls through to billing for non-testers", () => {
+    expect(hasFullAccess({ billing: billing({ status: "trialing" }) }, NOW)).toBe(true);
+    expect(hasFullAccess({ billing: billing({ status: "past_due" }) }, NOW)).toBe(false);
   });
 });
 

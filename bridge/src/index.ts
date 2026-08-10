@@ -24,6 +24,7 @@ import {
   type IMessageUser,
 } from "./onboarding.ts";
 import { askGuru } from "./rag.ts";
+import { membershipRequiredMessage } from "./billing.ts";
 import { createShare } from "./shares.ts";
 import { imessageUsersCol } from "./firestore.ts";
 import {
@@ -156,6 +157,9 @@ async function processInbound({
         chatGuid,
         onboardingState: "complete",
         traditions: ["hindu"],
+        // Operator comp flag: flip to true in Firestore to grant full access
+        // (guru questions + scheduled teachings) without a paid membership.
+        freeTestingUser: false,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       },
@@ -227,6 +231,19 @@ async function processInbound({
   if (user.onboardingState !== "complete") {
     const result = await advance(user, text);
     await sendUserMessages(chatGuid, result.reply);
+    return;
+  }
+
+  // Membership gate for guru answers: comped testers (freeTestingUser) and
+  // active trial/paid members pass; everyone else gets their signup link.
+  // Account conversation (cancel, settings, commands) already happened above,
+  // so a lapsed member can always manage their account or rejoin by text.
+  const paywall = membershipRequiredMessage(
+    user as unknown as Parameters<typeof membershipRequiredMessage>[0],
+  );
+  if (paywall) {
+    log.info(`guru question from ${user.handleId} without membership — sent signup nudge`);
+    await sendUserMessages(chatGuid, [paywall]);
     return;
   }
 
