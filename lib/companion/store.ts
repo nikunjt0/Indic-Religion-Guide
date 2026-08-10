@@ -31,17 +31,19 @@ export async function savePreferences(
     .set({ ...patch, userId, updatedAt: Date.now() }, { merge: true });
 }
 
-export async function getActiveEnrollment(
+/** All active enrollments — users can run several programs concurrently. */
+export async function getActiveEnrollments(
   db: Firestore,
   userId: string
-): Promise<Enrollment | null> {
+): Promise<Enrollment[]> {
   const snap = await db
     .collection(ENROLLMENTS)
     .where("userId", "==", userId)
     .where("status", "==", "active")
-    .limit(1)
     .get();
-  return snap.empty ? null : (snap.docs[0].data() as Enrollment);
+  return snap.docs
+    .map((d) => d.data() as Enrollment)
+    .sort((a, b) => a.startedAt - b.startedAt);
 }
 
 export async function getEnrollment(

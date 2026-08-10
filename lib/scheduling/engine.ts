@@ -118,13 +118,19 @@ export async function enqueueDelivery(
   return { created: true, record: revived };
 }
 
-/** Cancel all pending deliveries for a user (optionally only some types). */
+/**
+ * Cancel pending deliveries for a user, optionally narrowed by delivery type
+ * and/or enrollment (so rescheduling one program leaves the others queued).
+ */
 export async function cancelPendingDeliveries(
   deps: Pick<EngineDeps, "store" | "clock">,
   userId: string,
-  types?: DeliveryType[]
+  types?: DeliveryType[],
+  enrollmentId?: string
 ): Promise<number> {
-  const pending = await deps.store.findPendingByUser(userId, types);
+  const pending = (await deps.store.findPendingByUser(userId, types)).filter(
+    (d) => !enrollmentId || d.enrollmentId === enrollmentId
+  );
   const now = deps.clock.now();
   for (const d of pending) {
     await deps.store.update(d.id, { status: "canceled", updatedAt: now });

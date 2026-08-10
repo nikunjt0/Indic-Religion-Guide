@@ -18,7 +18,7 @@ import {
   type OnboardingState,
 } from "../../lib/onboarding/machine.ts";
 import {
-  getActiveEnrollment,
+  getActiveEnrollments,
   getEnrollment,
   getPreferences,
   recordInboundEventOnce,
@@ -50,7 +50,11 @@ import {
 import { BlueBubblesMessagingProvider } from "../../lib/messaging/bluebubbles.ts";
 import { GuardedMessagingProvider } from "../../lib/messaging/guarded.ts";
 import { guardConfigFromEnv } from "../../lib/messaging/guard.ts";
-import type { DeliveryPreferences, ScheduledDelivery } from "../../lib/types/companion.ts";
+import type {
+  DeliveryPreferences,
+  Enrollment,
+  ScheduledDelivery,
+} from "../../lib/types/companion.ts";
 import { PAUSED_INDEFINITELY } from "../../lib/types/companion.ts";
 import { DateTime } from "luxon";
 
@@ -288,7 +292,8 @@ async function scheduleNextDailyDharma(userId: string): Promise<void> {
   const next = nextOccurrence(
     {
       timezone: prefs.timezone,
-      preferredLocalTime: prefs.preferredLocalTime,
+      // Daily Dharma can run at its own hour, apart from program lessons.
+      preferredLocalTime: prefs.dailyDharmaLocalTime ?? prefs.preferredLocalTime,
       deliveryDays: prefs.deliveryDays,
     },
     Date.now()
@@ -506,8 +511,7 @@ export async function handleCompanionInbound(
 
 async function buildAgentSnapshot(user: CompanionUserDoc): Promise<CompanionAgentSnapshot> {
   const prefs = await getPreferences(adminDb, user.handleId);
-  const enrollment = await getActiveEnrollment(adminDb, user.handleId);
-  const program = enrollment ? getProgram(enrollment.programId) : null;
+  const enrollments = await getActiveEnrollments(adminDb, user.handleId);
   const tz = prefs?.timezone ?? DEFAULT_TZ;
 
   let nextMessageText: string | undefined;
@@ -538,16 +542,25 @@ async function buildAgentSnapshot(user: CompanionUserDoc): Promise<CompanionAgen
     deliveryTimeText: prefs ? formatPrefTime(prefs) : undefined,
     nextMessageText,
     dailyDharmaEnabled: prefs?.dailyDharmaEnabled ?? false,
-    program:
-      enrollment && program
-        ? {
-            slug: program.slug,
-            title: program.title,
-            day: enrollment.currentDay,
-            durationDays: program.durationDays,
-            lessonsDelivered: enrollment.completedLessonDays.length,
-          }
-        : null,
+    dailyDharmaTimeText: prefs?.dailyDharmaLocalTime
+      ? formatLocalTime(prefs.dailyDharmaLocalTime, tz)
+      : undefined,
+    programs: enrollments.flatMap((enrollment) => {
+      const program = getProgram(enrollment.programId);
+      if (!program) return [];
+      return [
+        {
+          slug: program.slug,
+          title: program.title,
+          day: enrollment.currentDay,
+          durationDays: program.durationDays,
+          lessonsDelivered: enrollment.completedLessonDays.length,
+          deliveryTimeText: enrollment.preferredLocalTime
+            ? formatLocalTime(enrollment.preferredLocalTime, tz)
+            : undefined,
+        },
+      ];
+    }),
     catalog: [...programs().values()].map((p) => ({
       slug: p.slug,
       title: p.title,
@@ -563,51 +576,93 @@ const NOT_SET_UP = {
   note: "The user hasn't completed consent/setup. Warmly tell them to text START so you can get them set up first (consent requires that exact keyword).",
 };
 
+/**
+ * Parse a user-worded time ("9am", "after dinner") into "HH:mm", or return a
+ * model-facing error object explaining what to ask for.
+ */
+function parseTimeArg(timeText: string): { time: string } | { error: string; note: string } {
+  const parsed = parseUserTimeInputDetailed(timeText);
+  if (parsed?.needsMeridiem) {
+    return { error: "ambiguous-time", note: "Ask whether they mean AM or PM." };
+  }
+  if (!parsed) {
+    return {
+      error: "unrecognized-time",
+      note: "Ask what time they'd like — e.g. 7:30 AM, 8 pm, or after dinner.",
+    };
+  }
+  return { time: parsed.time };
+}
+
 function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
   const userId = user.handleId;
+
+  /** Pick the enrollment a program-scoped tool call refers to. */
+  const resolveEnrollment = async (
+    programSlug?: string
+  ): Promise<{ enrollment: Enrollment } | { error: string; note?: string; programs?: string[] }> => {
+    const actives = await getActiveEnrollments(adminDb, userId);
+    if (actives.length === 0) return { error: "no-active-program" };
+    if (programSlug) {
+      const match = actives.find((e) => e.programId === programSlug);
+      return match
+        ? { enrollment: match }
+        : {
+            error: "not-enrolled-in-that-program",
+            programs: actives.map((e) => e.programId),
+          };
+    }
+    if (actives.length === 1) return { enrollment: actives[0] };
+    return {
+      error: "multiple-programs",
+      programs: actives.map((e) => e.programId),
+      note: "They're in several programs — ask which one they mean, then call again with program_slug.",
+    };
+  };
+
   return {
-    async enrollInProgram({ programSlug, replaceCurrent }) {
+    async enrollInProgram({ programSlug, time }) {
       const prefs = await getPreferences(adminDb, userId);
       if (!prefs || prefs.consentStatus !== "granted") return NOT_SET_UP;
       const program = getProgram(programSlug);
       if (!program) return { error: "unknown-program" };
-      const active = await getActiveEnrollment(adminDb, userId);
-      if (active?.programId === program.slug) {
+
+      let localTime: string | undefined;
+      if (time) {
+        const parsed = parseTimeArg(time);
+        if ("error" in parsed) return parsed;
+        localTime = parsed.time;
+      }
+
+      const actives = await getActiveEnrollments(adminDb, userId);
+      const existing = actives.find((e) => e.programId === program.slug);
+      if (existing) {
+        if (localTime && existing.preferredLocalTime !== localTime) {
+          return applyDeliveryTimeChange(user, localTime, program.slug);
+        }
         return {
           status: "already-enrolled",
           program: program.title,
-          day: active.currentDay,
+          day: existing.currentDay,
           durationDays: program.durationDays,
           note: "They are already in this program. Offer to restart it if they want to begin again.",
         };
       }
-      if (active && !replaceCurrent) {
-        return {
-          status: "needs-confirmation",
-          currentProgram: getProgram(active.programId)?.title ?? active.programId,
-          currentDay: active.currentDay,
-          note: "Only one program runs at a time and their progress in the current one is saved. Ask whether they want to switch; if they confirm, call again with replace_current true.",
-        };
-      }
-      let switchedFrom: string | undefined;
-      if (active) {
-        await saveEnrollment(adminDb, { ...active, status: "canceled", updatedAt: Date.now() });
-        await cancelPendingDeliveries(engineDeps, userId, ["program-lesson"]);
-        switchedFrom = getProgram(active.programId)?.title ?? active.programId;
-      }
+
       const enrollment = newEnrollment({
         userId,
         program,
         nowMs: Date.now(),
         source: "conversation",
+        preferredLocalTime: localTime,
       });
       await saveEnrollment(adminDb, enrollment);
-      const res = await rescheduleActive(user, false);
+      const res = await rescheduleEnrollment(user, enrollment, false);
+      const alongside = actives.map((e) => getProgram(e.programId)?.title ?? e.programId);
       if (!res) {
         return {
           status: "enrolled-but-unverified",
           program: program.title,
-          switchedFrom,
           note: "Enrollment saved, but the first lesson could not be confirmed in the delivery queue. Say you're double-checking on your end and it may take a minute.",
         };
       }
@@ -615,21 +670,65 @@ function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
         status: "enrolled",
         program: program.title,
         durationDays: program.durationDays,
+        deliveryTime: localTime ? formatLocalTime(localTime, prefs.timezone) : formatPrefTime(prefs),
         firstLessonDay: res.day,
         firstLessonArrives: res.when,
-        switchedFrom,
+        runningAlongside: alongside.length > 0 ? alongside : undefined,
       };
     },
 
-    async enableDailyDharma() {
+    async leaveProgram({ programSlug }) {
+      const actives = await getActiveEnrollments(adminDb, userId);
+      const enrollment = actives.find((e) => e.programId === programSlug);
+      if (!enrollment) {
+        return {
+          error: "not-enrolled-in-that-program",
+          programs: actives.map((e) => e.programId),
+        };
+      }
+      await saveEnrollment(adminDb, { ...enrollment, status: "canceled", updatedAt: Date.now() });
+      await cancelPendingDeliveries(engineDeps, userId, ["program-lesson"], enrollment.id);
+      const remaining = actives
+        .filter((e) => e.id !== enrollment.id)
+        .map((e) => getProgram(e.programId)?.title ?? e.programId);
+      return {
+        status: "left",
+        program: getProgram(programSlug)?.title ?? programSlug,
+        progressSaved: true,
+        stillEnrolledIn: remaining,
+      };
+    },
+
+    async enableDailyDharma({ time }) {
       const prefs = await getPreferences(adminDb, userId);
       if (!prefs || prefs.consentStatus !== "granted") return NOT_SET_UP;
-      if (prefs.dailyDharmaEnabled) {
-        return { status: "already-on", deliveryTime: formatPrefTime(prefs) };
+
+      let localTime: string | undefined;
+      if (time) {
+        const parsed = parseTimeArg(time);
+        if ("error" in parsed) return parsed;
+        localTime = parsed.time;
       }
-      await savePreferences(adminDb, userId, { dailyDharmaEnabled: true });
+
+      if (prefs.dailyDharmaEnabled && !localTime) {
+        return {
+          status: "already-on",
+          deliveryTime: formatLocalTime(prefs.dailyDharmaLocalTime ?? prefs.preferredLocalTime, prefs.timezone),
+        };
+      }
+      await savePreferences(adminDb, userId, {
+        dailyDharmaEnabled: true,
+        ...(localTime ? { dailyDharmaLocalTime: localTime } : {}),
+      });
+      if (localTime) await cancelPendingDeliveries(engineDeps, userId, ["daily-dharma"]);
       await scheduleNextDailyDharma(userId);
-      return { status: "enabled", deliveryTime: formatPrefTime(prefs) };
+      return {
+        status: "enabled",
+        deliveryTime: formatLocalTime(
+          localTime ?? prefs.dailyDharmaLocalTime ?? prefs.preferredLocalTime,
+          prefs.timezone
+        ),
+      };
     },
 
     async disableDailyDharma() {
@@ -638,20 +737,10 @@ function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
       return { status: "disabled" };
     },
 
-    async changeDeliveryTime(timeText) {
-      const prefs = await getPreferences(adminDb, userId);
-      if (!prefs || prefs.consentStatus !== "granted") return NOT_SET_UP;
-      const parsed = parseUserTimeInputDetailed(timeText);
-      if (parsed?.needsMeridiem) {
-        return { error: "ambiguous-time", note: "Ask whether they mean AM or PM." };
-      }
-      if (!parsed) {
-        return {
-          error: "unrecognized-time",
-          note: "Ask what time they'd like — e.g. 7:30 AM, 8 pm, or after dinner.",
-        };
-      }
-      return applyDeliveryTimeChange(user, parsed.time);
+    async changeDeliveryTime({ time, target }) {
+      const parsed = parseTimeArg(time);
+      if ("error" in parsed) return parsed;
+      return applyDeliveryTimeChange(user, parsed.time, target || "all");
     },
 
     async pauseMessages(days) {
@@ -672,12 +761,11 @@ function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
 
     async resumeMessages() {
       await savePreferences(adminDb, userId, { pausedUntil: null, pauseReason: "" });
-      const resumed = await rescheduleActive(user, false);
-      if (resumed) {
+      const resumed = await rescheduleAllActive(user, false);
+      if (resumed.length > 0) {
         return {
           status: "resumed",
-          nextLessonDay: resumed.day,
-          arrives: resumed.when,
+          nextLessons: resumed.map((r) => ({ program: r.programTitle, day: r.day, arrives: r.when })),
           note: "They continue from where they paused — no missed-lesson pile-up.",
         };
       }
@@ -689,20 +777,23 @@ function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
       return { status: "nothing-to-resume" };
     },
 
-    async restartProgram() {
-      const enrollment = await getActiveEnrollment(adminDb, userId);
-      const program = enrollment && getProgram(enrollment.programId);
-      if (!enrollment || !program) return { error: "no-active-program" };
-      await saveEnrollment(adminDb, {
+    async restartProgram({ programSlug }) {
+      const resolved = await resolveEnrollment(programSlug);
+      if ("error" in resolved) return resolved;
+      const enrollment = resolved.enrollment;
+      const program = getProgram(enrollment.programId);
+      if (!program) return { error: "no-active-program" };
+      const fresh: Enrollment = {
         ...enrollment,
         currentDay: 1,
         completedLessonDays: [],
         skippedLessonDays: [],
         status: "active",
         updatedAt: Date.now(),
-      });
-      await cancelPendingDeliveries(engineDeps, userId, ["program-lesson"]);
-      const res = await rescheduleActive(user, false);
+      };
+      await saveEnrollment(adminDb, fresh);
+      await cancelPendingDeliveries(engineDeps, userId, ["program-lesson"], enrollment.id);
+      const res = await rescheduleEnrollment(user, fresh, false);
       return {
         status: "restarted",
         program: program.title,
@@ -710,21 +801,25 @@ function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
       };
     },
 
-    async skipTodaysLesson() {
-      const enrollment = await getActiveEnrollment(adminDb, userId);
-      const program = enrollment && getProgram(enrollment.programId);
-      if (!enrollment || !program) return { error: "no-active-program" };
+    async skipTodaysLesson({ programSlug }) {
+      const resolved = await resolveEnrollment(programSlug);
+      if ("error" in resolved) return resolved;
+      const enrollment = resolved.enrollment;
+      const program = getProgram(enrollment.programId);
+      if (!program) return { error: "no-active-program" };
       const skipped = enrollment.currentDay;
-      await saveEnrollment(adminDb, {
+      const advanced: Enrollment = {
         ...enrollment,
         skippedLessonDays: [...enrollment.skippedLessonDays, skipped],
         currentDay: Math.min(skipped + 1, program.durationDays),
         updatedAt: Date.now(),
-      });
-      await cancelPendingDeliveries(engineDeps, userId, ["program-lesson"]);
-      const res = await rescheduleActive(user, false);
+      };
+      await saveEnrollment(adminDb, advanced);
+      await cancelPendingDeliveries(engineDeps, userId, ["program-lesson"], enrollment.id);
+      const res = await rescheduleEnrollment(user, advanced, false);
       return {
         status: "skipped",
+        program: program.title,
         skippedDay: skipped,
         nextLessonDay: res?.day ?? null,
         arrives: res?.when ?? null,
@@ -745,8 +840,8 @@ function agentExecutor(user: CompanionUserDoc): CompanionToolExecutor {
       };
     },
 
-    async getLessonContent() {
-      const lesson = await lastDeliveredLesson(userId);
+    async getLessonContent({ programSlug }) {
+      const lesson = await lastDeliveredLesson(userId, programSlug);
       if (!lesson) return { error: "no-lesson-delivered-yet" };
       const l = lesson.lesson;
       return {
@@ -889,10 +984,14 @@ async function finishOnboarding(
   ]);
 }
 
+function formatLocalTime(hhmm: string, timezone: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const dt = DateTime.fromObject({ hour: h, minute: m }, { zone: timezone });
+  return `${dt.toFormat("h:mm a")} (${timezone})`;
+}
+
 function formatPrefTime(prefs: DeliveryPreferences): string {
-  const [h, m] = prefs.preferredLocalTime.split(":").map(Number);
-  const dt = DateTime.fromObject({ hour: h, minute: m }, { zone: prefs.timezone });
-  return `${dt.toFormat("h:mm a")} (${prefs.timezone})`;
+  return formatLocalTime(prefs.preferredLocalTime, prefs.timezone);
 }
 
 // ---------------------------------------------------------------------------
@@ -932,12 +1031,12 @@ async function handleCommand(
           pausedUntil: null,
         });
       }
-      const enrollment = await getActiveEnrollment(adminDb, userId);
-      if (enrollment) {
-        await rescheduleActive(user, cmd.immediate);
-        await reply(chatGuid, [
-          `Welcome back — continuing ${enrollment.programId} from day ${enrollment.currentDay}.`,
-        ]);
+      const rescheduled = await rescheduleAllActive(user, cmd.immediate);
+      if (rescheduled.length > 0) {
+        const lines = rescheduled
+          .map((r) => `${r.programTitle} from day ${r.day}`)
+          .join(" and ");
+        await reply(chatGuid, [`Welcome back — continuing ${lines}.`]);
       } else if (prefs?.dailyDharmaEnabled) {
         await savePreferences(adminDb, userId, { enabled: true, pausedUntil: null });
         await scheduleNextDailyDharma(userId);
@@ -966,13 +1065,16 @@ async function handleCommand(
 
     case "resume": {
       await savePreferences(adminDb, userId, { pausedUntil: null, pauseReason: "" });
-      const resumed = await rescheduleActive(user, false);
-      if (resumed) {
+      const resumed = await rescheduleAllActive(user, false);
+      if (prefs?.dailyDharmaEnabled) await scheduleNextDailyDharma(userId);
+      if (resumed.length > 0) {
+        const lines = resumed
+          .map((r) => `${r.programTitle} day ${r.day} arrives ${r.when}`)
+          .join("; ");
         await reply(chatGuid, [
-          `Resumed — your next lesson (day ${resumed.day}) arrives at ${resumed.when}. We continue from where you paused; no missed-lesson pile-up.`,
+          `Resumed — ${lines}. We continue from where you paused; no missed-lesson pile-up.`,
         ]);
       } else if (prefs?.dailyDharmaEnabled) {
-        await scheduleNextDailyDharma(userId);
         await reply(chatGuid, ["Resumed — Daily Dharma returns at your usual time."]);
       } else {
         await reply(chatGuid, ["Nothing to resume yet. Reply START to begin, or PROGRAMS to browse."]);
@@ -998,6 +1100,23 @@ async function handleCommand(
         await reply(chatGuid, ["No delivery schedule yet — reply START to set one up."]);
         return;
       }
+      const enrollments = await getActiveEnrollments(adminDb, userId);
+      const streams: string[] = [];
+      for (const e of enrollments) {
+        const title = getProgram(e.programId)?.title ?? e.programId;
+        streams.push(
+          `${title} at ${e.preferredLocalTime ? formatLocalTime(e.preferredLocalTime, prefs.timezone) : formatPrefTime(prefs)}`
+        );
+      }
+      if (prefs.dailyDharmaEnabled) {
+        streams.push(
+          `Daily Dharma at ${formatLocalTime(prefs.dailyDharmaLocalTime ?? prefs.preferredLocalTime, prefs.timezone)}`
+        );
+      }
+      const scheduleText =
+        streams.length > 0
+          ? `Your deliveries: ${streams.join("; ")}.`
+          : `Your delivery time is ${formatPrefTime(prefs)}.`;
       const pending = await deliveryStore.findPendingByUser(userId);
       const nextUp = pending
         .filter((d) => ["queued", "retry"].includes(d.status))
@@ -1006,7 +1125,7 @@ async function handleCommand(
         ? `Next message: ${DateTime.fromMillis(nextUp.scheduledAt, { zone: prefs.timezone }).toFormat("cccc, LLL d 'at' h:mm a ZZZZ")}.`
         : "Nothing currently scheduled.";
       await reply(chatGuid, [
-        `Your delivery time is ${formatPrefTime(prefs)}. ${nextText} Reply CHANGE TIME to change it.`,
+        `${scheduleText} ${nextText} Just tell me if you'd like different times — each program can have its own.`,
       ]);
       return;
     }
@@ -1043,35 +1162,50 @@ async function handleCommand(
     }
 
     case "my-program": {
-      const enrollment = await getActiveEnrollment(adminDb, userId);
-      if (!enrollment) {
+      const enrollments = await getActiveEnrollments(adminDb, userId);
+      if (enrollments.length === 0) {
         await reply(chatGuid, ["You're not in a program right now. Reply PROGRAMS to browse."]);
         return;
       }
-      const program = getProgram(enrollment.programId);
-      await reply(chatGuid, [
-        `${program?.title ?? enrollment.programId}: day ${enrollment.currentDay} of ${program?.durationDays ?? "?"} — ${enrollment.completedLessonDays.length} lessons delivered.`,
-      ]);
+      const lines = enrollments.map((e) => {
+        const program = getProgram(e.programId);
+        return `${program?.title ?? e.programId}: day ${e.currentDay} of ${program?.durationDays ?? "?"} — ${e.completedLessonDays.length} lessons delivered`;
+      });
+      await reply(chatGuid, [lines.join("\n")]);
       return;
     }
 
     case "skip": {
-      const enrollment = await getActiveEnrollment(adminDb, userId);
-      const program = enrollment && getProgram(enrollment.programId);
-      if (!enrollment || !program) {
+      const enrollments = await getActiveEnrollments(adminDb, userId);
+      if (enrollments.length === 0) {
+        await reply(chatGuid, ["Nothing to skip — you're not in a program."]);
+        return;
+      }
+      if (enrollments.length > 1) {
+        const titles = enrollments
+          .map((e) => getProgram(e.programId)?.title ?? e.programId)
+          .join(", ");
+        await reply(chatGuid, [
+          `You're in ${titles} — tell me which one you'd like to skip a day of.`,
+        ]);
+        return;
+      }
+      const enrollment = enrollments[0];
+      const program = getProgram(enrollment.programId);
+      if (!program) {
         await reply(chatGuid, ["Nothing to skip — you're not in a program."]);
         return;
       }
       const skipped = enrollment.currentDay;
-      const updated = {
+      const updated: Enrollment = {
         ...enrollment,
         skippedLessonDays: [...enrollment.skippedLessonDays, skipped],
         currentDay: Math.min(skipped + 1, program.durationDays),
         updatedAt: Date.now(),
       };
       await saveEnrollment(adminDb, updated);
-      await cancelPendingDeliveries(engineDeps, userId, ["program-lesson"]);
-      const res = await rescheduleActive(user, false);
+      await cancelPendingDeliveries(engineDeps, userId, ["program-lesson"], enrollment.id);
+      const res = await rescheduleEnrollment(user, updated, false);
       await reply(chatGuid, [
         `Skipped day ${skipped}. ${res ? `Day ${res.day} arrives ${res.when}.` : ""}`,
       ]);
@@ -1079,23 +1213,37 @@ async function handleCommand(
     }
 
     case "restart": {
-      const enrollment = await getActiveEnrollment(adminDb, userId);
-      const program = enrollment && getProgram(enrollment.programId);
-      if (!enrollment || !program) {
+      const enrollments = await getActiveEnrollments(adminDb, userId);
+      if (enrollments.length === 0) {
         await reply(chatGuid, ["Nothing to restart. Reply PROGRAMS to pick a program."]);
         return;
       }
-      const fresh = {
+      if (enrollments.length > 1) {
+        const titles = enrollments
+          .map((e) => getProgram(e.programId)?.title ?? e.programId)
+          .join(", ");
+        await reply(chatGuid, [
+          `You're in ${titles} — tell me which one you'd like to restart.`,
+        ]);
+        return;
+      }
+      const enrollment = enrollments[0];
+      const program = getProgram(enrollment.programId);
+      if (!program) {
+        await reply(chatGuid, ["Nothing to restart. Reply PROGRAMS to pick a program."]);
+        return;
+      }
+      const fresh: Enrollment = {
         ...enrollment,
         currentDay: 1,
         completedLessonDays: [],
         skippedLessonDays: [],
-        status: "active" as const,
+        status: "active",
         updatedAt: Date.now(),
       };
       await saveEnrollment(adminDb, fresh);
-      await cancelPendingDeliveries(engineDeps, userId, ["program-lesson"]);
-      const res = await rescheduleActive(user, false);
+      await cancelPendingDeliveries(engineDeps, userId, ["program-lesson"], enrollment.id);
+      const res = await rescheduleEnrollment(user, fresh, false);
       await reply(chatGuid, [
         `Restarting ${program.title} from Day 1${res ? ` — arriving ${res.when}` : ""}.`,
       ]);
@@ -1159,13 +1307,29 @@ async function handleCommand(
     }
 
     case "settings": {
-      const enrollment = await getActiveEnrollment(adminDb, userId);
+      const enrollments = await getActiveEnrollments(adminDb, userId);
       const savedCount = user.savedTeachings?.length ?? 0;
+      const programLines =
+        enrollments.length > 0
+          ? enrollments
+              .map((e) => {
+                const title = getProgram(e.programId)?.title ?? e.programId;
+                const at =
+                  e.preferredLocalTime && prefs
+                    ? ` at ${formatLocalTime(e.preferredLocalTime, prefs.timezone)}`
+                    : "";
+                return `• Program: ${title}, day ${e.currentDay}${at}`;
+              })
+              .join("\n")
+          : "• Program: none";
+      const dharmaLine = prefs?.dailyDharmaEnabled
+        ? `on${prefs.dailyDharmaLocalTime ? ` at ${formatLocalTime(prefs.dailyDharmaLocalTime, prefs.timezone)}` : ""}`
+        : "off";
       await reply(chatGuid, [
         `Your setup:\n` +
-          `• Delivery: ${prefs ? formatPrefTime(prefs) : "not set"}${prefs?.pausedUntil && prefs.pausedUntil > Date.now() ? " (paused)" : ""}\n` +
-          `• Program: ${enrollment ? `${enrollment.programId}, day ${enrollment.currentDay}` : "none"}\n` +
-          `• Daily Dharma: ${prefs?.dailyDharmaEnabled ? "on" : "off"}\n` +
+          `• Default delivery: ${prefs ? formatPrefTime(prefs) : "not set"}${prefs?.pausedUntil && prefs.pausedUntil > Date.now() ? " (paused)" : ""}\n` +
+          `${programLines}\n` +
+          `• Daily Dharma: ${dharmaLine}\n` +
           `• Saved teachings: ${savedCount}\n` +
           `Commands: CHANGE TIME, PAUSE, RESUME, STOP, PROGRAMS, DELETE MY DATA.`,
       ]);
@@ -1201,12 +1365,19 @@ async function handleCommand(
   }
 }
 
-async function rescheduleActive(
+interface RescheduledLesson {
+  programId: string;
+  programTitle: string;
+  day: number;
+  when: string;
+  deliveryId: string;
+}
+
+async function rescheduleEnrollment(
   user: CompanionUserDoc,
+  enrollment: Enrollment,
   immediate: boolean
-): Promise<{ day: number; when: string; deliveryId: string } | null> {
-  const enrollment = await getActiveEnrollment(adminDb, user.handleId);
-  if (!enrollment) return null;
+): Promise<RescheduledLesson | null> {
   const program = getProgram(enrollment.programId);
   const prefs = await getPreferences(adminDb, user.handleId);
   if (!program || !prefs) return null;
@@ -1221,6 +1392,8 @@ async function rescheduleActive(
   });
   if (!("scheduledAt" in res)) return null;
   return {
+    programId: program.slug,
+    programTitle: program.title,
     day: enrollment.currentDay,
     deliveryId: res.deliveryId,
     when: DateTime.fromMillis(res.scheduledAt, { zone: prefs.timezone }).toFormat(
@@ -1229,52 +1402,149 @@ async function rescheduleActive(
   };
 }
 
+/** Re-queue the next lesson of every active enrollment. */
+async function rescheduleAllActive(
+  user: CompanionUserDoc,
+  immediate: boolean
+): Promise<RescheduledLesson[]> {
+  const enrollments = await getActiveEnrollments(adminDb, user.handleId);
+  const results: RescheduledLesson[] = [];
+  for (const enrollment of enrollments) {
+    const res = await rescheduleEnrollment(user, enrollment, immediate);
+    if (res) results.push(res);
+  }
+  return results;
+}
+
+type TimeChangeTarget = "all" | "daily-dharma" | string; // string = program slug
+
 interface DeliveryTimeChangeResult {
-  status: "changed" | "changed-but-unverified";
-  newTime: string;
-  nextLessonArrives?: string | null;
+  status?: "changed" | "changed-but-unverified";
+  error?: string;
+  target?: string;
+  newTime?: string;
+  nextLessons?: { program: string; arrives: string }[];
   note?: string;
 }
 
-/** Core time change shared by the keyword flow and the agent tool. */
+/**
+ * Core time change shared by the keyword flow and the agent tool. Each
+ * program and Daily Dharma can run at its own hour: "all" moves everything to
+ * one time (clearing per-stream overrides), a program slug or "daily-dharma"
+ * moves just that stream.
+ */
 async function applyDeliveryTimeChange(
   user: CompanionUserDoc,
-  time: string
+  time: string,
+  target: TimeChangeTarget
 ): Promise<DeliveryTimeChangeResult> {
-  await savePreferences(adminDb, user.handleId, {
+  const userId = user.handleId;
+  const prefs = await getPreferences(adminDb, userId);
+  if (!prefs || prefs.consentStatus !== "granted") return NOT_SET_UP;
+  const tz = prefs.timezone;
+  const newTime = formatLocalTime(time, tz);
+
+  if (target === "daily-dharma") {
+    if (!prefs.dailyDharmaEnabled) {
+      return {
+        error: "daily-dharma-off",
+        note: "Daily Dharma isn't on. Offer to enable it at that time (enable_daily_dharma with the time).",
+      };
+    }
+    await savePreferences(adminDb, userId, {
+      dailyDharmaLocalTime: time,
+      lastPreferenceChangeAt: Date.now(),
+    });
+    await cancelPendingDeliveries(engineDeps, userId, ["daily-dharma"]);
+    await scheduleNextDailyDharma(userId);
+    log.info("daily dharma time changed", { userId, time });
+    return { status: "changed", target: "Daily Dharma", newTime };
+  }
+
+  if (target !== "all") {
+    const enrollment = (await getActiveEnrollments(adminDb, userId)).find(
+      (e) => e.programId === target
+    );
+    if (!enrollment) {
+      return {
+        error: "not-enrolled-in-that-program",
+        note: "They aren't in that program; check the account snapshot for what's active.",
+      };
+    }
+    const program = getProgram(target);
+    await saveEnrollment(adminDb, {
+      ...enrollment,
+      preferredLocalTime: time,
+      updatedAt: Date.now(),
+    });
+    await cancelPendingDeliveries(engineDeps, userId, ["program-lesson"], enrollment.id);
+    const res = await rescheduleEnrollment(
+      user,
+      { ...enrollment, preferredLocalTime: time },
+      false
+    );
+    log.info("program delivery time changed", { userId, program: target, time, nextLesson: res });
+    if (!res) {
+      return {
+        status: "changed-but-unverified",
+        target: program?.title ?? target,
+        newTime,
+        note: "The time was saved but the next lesson could not be confirmed in the delivery queue. Do not present it as confirmed; say you're double-checking and they can ask again in a minute.",
+      };
+    }
+    return {
+      status: "changed",
+      target: program?.title ?? target,
+      newTime,
+      nextLessons: [{ program: res.programTitle, arrives: res.when }],
+    };
+  }
+
+  // target === "all": one time for everything — clear per-stream overrides.
+  await savePreferences(adminDb, userId, {
     preferredLocalTime: time,
+    dailyDharmaLocalTime: null,
     lastPreferenceChangeAt: Date.now(),
   });
-  const activeEnrollment = await getActiveEnrollment(adminDb, user.handleId);
-  // Cancel unsent recurring deliveries, keep history, recalculate.
-  const canceled = await cancelPendingDeliveries(engineDeps, user.handleId, [
+  const enrollments = await getActiveEnrollments(adminDb, userId);
+  for (const e of enrollments) {
+    if (e.preferredLocalTime) {
+      await saveEnrollment(adminDb, { ...e, preferredLocalTime: null, updatedAt: Date.now() });
+    }
+  }
+  const canceled = await cancelPendingDeliveries(engineDeps, userId, [
     "program-lesson",
     "daily-dharma",
   ]);
-  const res = await rescheduleActive(user, false);
-  const prefs = await getPreferences(adminDb, user.handleId);
-  if (prefs?.dailyDharmaEnabled) await scheduleNextDailyDharma(user.handleId);
-  log.info("delivery time changed", {
-    userId: user.handleId,
+  const rescheduled = await rescheduleAllActive(user, false);
+  if (prefs.dailyDharmaEnabled) await scheduleNextDailyDharma(userId);
+  log.info("delivery time changed for all streams", {
+    userId,
     preferredLocalTime: time,
     canceledPending: canceled,
-    nextLesson: res,
-    dailyDharmaEnabled: prefs?.dailyDharmaEnabled ?? false,
+    nextLessons: rescheduled,
   });
-  const newTime = prefs ? formatPrefTime(prefs) : time;
-  if (activeEnrollment && !res) {
-    log.error("delivery time change could not verify queued lesson", {
-      userId: user.handleId,
+  if (enrollments.length > 0 && rescheduled.length < enrollments.length) {
+    log.error("delivery time change could not verify all queued lessons", {
+      userId,
       preferredLocalTime: time,
-      canceledPending: canceled,
+      expected: enrollments.length,
+      verified: rescheduled.length,
     });
     return {
       status: "changed-but-unverified",
+      target: "all messages",
       newTime,
-      note: "The preferred time was saved but the next lesson could not be confirmed in the delivery queue. Do not present it as confirmed; say you're double-checking and they can ask again in a minute.",
+      nextLessons: rescheduled.map((r) => ({ program: r.programTitle, arrives: r.when })),
+      note: "The time was saved but not every next lesson could be confirmed in the delivery queue. Do not present it as fully confirmed; say you're double-checking and they can ask again in a minute.",
     };
   }
-  return { status: "changed", newTime, nextLessonArrives: res?.when ?? null };
+  return {
+    status: "changed",
+    target: "all messages",
+    newTime,
+    nextLessons: rescheduled.map((r) => ({ program: r.programTitle, arrives: r.when })),
+  };
 }
 
 async function changeDeliveryTime(
@@ -1282,34 +1552,42 @@ async function changeDeliveryTime(
   chatGuid: string,
   time: string
 ): Promise<void> {
-  const result = await applyDeliveryTimeChange(user, time);
+  const result = await applyDeliveryTimeChange(user, time, "all");
+  if (result.error) {
+    await reply(chatGuid, ["No delivery schedule yet — reply START to set one up."]);
+    return;
+  }
   if (result.status === "changed-but-unverified") {
     await reply(chatGuid, [
       "I updated your preferred time, but I could not verify the next lesson in the delivery queue. I’m not marking this confirmed. Please try CHANGE TIME again in a minute.",
     ]);
     return;
   }
+  const next = result.nextLessons?.[0];
   await reply(chatGuid, [
     `Done — your messages now arrive at ${result.newTime}.` +
-      (result.nextLessonArrives ? ` Next lesson: ${result.nextLessonArrives}.` : ""),
+      (next ? ` Next lesson: ${next.arrives}.` : ""),
   ]);
 }
 
+/**
+ * The most recently delivered lesson, across all active programs — or one
+ * specific program's latest lesson when a slug is given.
+ */
 async function lastDeliveredLesson(
-  userId: string
+  userId: string,
+  programSlug?: string
 ): Promise<{ programId: string; lesson: NonNullable<ReturnType<typeof lessonForDay>> } | null> {
-  const enrollment =
-    (await getActiveEnrollment(adminDb, userId)) ??
-    // Completed programs still support DEEPER/KIDS on the final lesson.
-    null;
+  const enrollments = (await getActiveEnrollments(adminDb, userId)).filter(
+    (e) => (!programSlug || e.programId === programSlug) && e.completedLessonDays.length > 0
+  );
+  const enrollment = enrollments.sort(
+    (a, b) => (b.lastLessonSentAt ?? 0) - (a.lastLessonSentAt ?? 0)
+  )[0];
   if (!enrollment) return null;
   const program = getProgram(enrollment.programId);
   if (!program) return null;
-  const lastDay =
-    enrollment.completedLessonDays.length > 0
-      ? enrollment.completedLessonDays[enrollment.completedLessonDays.length - 1]
-      : null;
-  if (!lastDay) return null;
+  const lastDay = enrollment.completedLessonDays[enrollment.completedLessonDays.length - 1];
   const lesson = lessonForDay(program, lastDay);
   return lesson ? { programId: program.slug, lesson } : null;
 }

@@ -318,4 +318,20 @@ describe("cancelPendingDeliveries", () => {
     expect(canceled).toBe(1);
     expect((await store.get(a.record.id))!.status).toBe("sent");
   });
+
+  it("scoped to one enrollment, leaves other programs' queued lessons alone", async () => {
+    const { deps, store } = makeDeps();
+    const a = await enqueueDelivery(
+      deps,
+      enqueueParams({ enrollmentId: "enroll-a", scheduledAt: T0 + 86_400_000 })
+    );
+    const b = await enqueueDelivery(
+      deps,
+      enqueueParams({ enrollmentId: "enroll-b", scheduledAt: T0 + 86_400_000 })
+    );
+    const canceled = await cancelPendingDeliveries(deps, "user1", ["program-lesson"], "enroll-a");
+    expect(canceled).toBe(1);
+    expect((await store.get(a.record.id))!.status).toBe("canceled");
+    expect((await store.get(b.record.id))!.status).toBe("queued");
+  });
 });

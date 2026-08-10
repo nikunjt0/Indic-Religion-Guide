@@ -15,13 +15,15 @@ function snapshot(overrides: Partial<CompanionAgentSnapshot> = {}): CompanionAge
     deliveryTimeText: "8:51 PM (America/Chicago)",
     nextMessageText: "Monday, Aug 10 at 8:51 PM CDT",
     dailyDharmaEnabled: false,
-    program: {
-      slug: "hinduism-101",
-      title: "Hinduism 101",
-      day: 2,
-      durationDays: 21,
-      lessonsDelivered: 1,
-    },
+    programs: [
+      {
+        slug: "hinduism-101",
+        title: "Hinduism 101",
+        day: 2,
+        durationDays: 21,
+        lessonsDelivered: 1,
+      },
+    ],
     catalog: [
       { slug: "hinduism-101", title: "Hinduism 101", durationDays: 21, description: "Foundations." },
       {
@@ -55,6 +57,7 @@ function fakeExecutor(overrides: Partial<CompanionToolExecutor> = {}) {
       program: "Seven Hindu Stories for Families",
       firstLessonArrives: "Tuesday at 8:51 PM",
     }),
+    leaveProgram: stub("leaveProgram"),
     enableDailyDharma: stub("enableDailyDharma"),
     disableDailyDharma: stub("disableDailyDharma"),
     changeDeliveryTime: stub("changeDeliveryTime"),
@@ -90,10 +93,36 @@ describe("companion agent system prompt", () => {
   it("gives the model the live account state and catalog", () => {
     const prompt = buildCompanionSystemPrompt(snapshot());
     expect(prompt).toContain("Hinduism 101 — day 2 of 21");
-    expect(prompt).toContain("Delivery time: 8:51 PM (America/Chicago)");
+    expect(prompt).toContain("Default delivery time: 8:51 PM (America/Chicago)");
     expect(prompt).toContain("seven-hindu-stories-for-families");
     expect(prompt).toContain("Daily Dharma (one standalone teaching a day): off");
     expect(prompt).toContain("Never tell them to text a code");
+  });
+
+  it("lists every concurrent program with its own delivery time", () => {
+    const prompt = buildCompanionSystemPrompt(
+      snapshot({
+        programs: [
+          { slug: "hinduism-101", title: "Hinduism 101", day: 2, durationDays: 21, lessonsDelivered: 1 },
+          {
+            slug: "seven-hindu-stories-for-families",
+            title: "Seven Hindu Stories for Families",
+            day: 1,
+            durationDays: 7,
+            lessonsDelivered: 0,
+            deliveryTimeText: "9:00 AM (America/Chicago)",
+          },
+        ],
+        dailyDharmaEnabled: true,
+        dailyDharmaTimeText: "6:00 AM (America/Chicago)",
+      })
+    );
+    expect(prompt).toContain("Hinduism 101 — day 2 of 21 (1 lesson delivered so far), arrives at the default time");
+    expect(prompt).toContain(
+      "Seven Hindu Stories for Families — day 1 of 7 (0 lessons delivered so far), arrives at 9:00 AM (America/Chicago)"
+    );
+    expect(prompt).toContain("on, arrives at 6:00 AM (America/Chicago)");
+    expect(prompt).toContain("several programs at the same time");
   });
 
   it("tells the model when the user is opted out or not set up", () => {
@@ -155,13 +184,65 @@ describe("runCompanionAgent", () => {
     expect(calls).toEqual([
       {
         name: "enrollInProgram",
-        args: { programSlug: "seven-hindu-stories-for-families", replaceCurrent: false },
+        args: { programSlug: "seven-hindu-stories-for-families", time: undefined },
       },
     ]);
     // The tool result went back to the model verbatim as JSON.
     const secondBody = model.bodies[1].messages as Record<string, unknown>[];
     const toolMsg = secondBody.find((m) => m.role === "tool");
     expect(JSON.parse(toolMsg!.content as string)).toMatchObject({ status: "enrolled" });
+  });
+
+  it("passes per-stream times through: enroll at 9am, existing program untouched", async () => {
+    const { executor, calls } = fakeExecutor();
+    const model = scriptedModel([
+      {
+        content: null,
+        tool_calls: [
+          toolCall("enroll_in_program", {
+            program_slug: "seven-hindu-stories-for-families",
+            time: "9am",
+          }),
+        ],
+      },
+      { content: "The stories will arrive at 9:00 AM; Hinduism 101 stays at 8:51 PM." },
+    ]);
+    const result = await runCompanionAgent({
+      message: "Add the stories program at 9am but keep Hinduism 101 at 8:51pm",
+      history: [],
+      snapshot: snapshot(),
+      executor,
+      createCompletion: model.create,
+    });
+    expect(result.kind).toBe("reply");
+    expect(calls).toEqual([
+      {
+        name: "enrollInProgram",
+        args: { programSlug: "seven-hindu-stories-for-families", time: "9am" },
+      },
+    ]);
+  });
+
+  it("routes a targeted time change to the named stream", async () => {
+    const { executor, calls } = fakeExecutor();
+    const model = scriptedModel([
+      {
+        content: null,
+        tool_calls: [toolCall("change_delivery_time", { time: "9am", target: "daily-dharma" })],
+      },
+      { content: "Daily Dharma now arrives at 9:00 AM; everything else is unchanged." },
+    ]);
+    const result = await runCompanionAgent({
+      message: "make daily dharma 9am but leave my program alone",
+      history: [],
+      snapshot: snapshot({ dailyDharmaEnabled: true }),
+      executor,
+      createCompletion: model.create,
+    });
+    expect(result.kind).toBe("reply");
+    expect(calls).toEqual([
+      { name: "changeDeliveryTime", args: { time: "9am", target: "daily-dharma" } },
+    ]);
   });
 
   it("hands a pure scripture question to the guru untouched", async () => {
