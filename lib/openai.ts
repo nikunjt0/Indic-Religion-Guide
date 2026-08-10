@@ -24,9 +24,10 @@ export const EMBED_DIMS = 1536;
 // system prompt is. gpt-4.1 follows the imperative-and-cite instructions far
 // more faithfully.
 export const CHAT_MODEL = "gpt-4.1";
-// Lightweight model for account-action routing before RAG. It only decides
-// whether to call a small set of delivery-management tools.
-export const COMMAND_ROUTER_MODEL = process.env.COMMAND_ROUTER_MODEL ?? "gpt-4.1-mini";
+// Conversational account agent (enrollment, scheduling, pausing). Full-size
+// model: it composes user-facing replies and orchestrates tool calls, and a
+// mini model reads as exactly the phone-bot voice we're avoiding.
+export const COMPANION_AGENT_MODEL = process.env.COMPANION_AGENT_MODEL ?? CHAT_MODEL;
 // Vision-capable model. Used when the user's turn includes image attachments
 // (or video frames extracted client-side). Same gpt-4.1 family as the text
 // model: stronger visual reasoning and a large context window for the keyframe
