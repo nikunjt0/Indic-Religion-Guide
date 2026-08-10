@@ -222,9 +222,14 @@ async function processInbound({
   }
 
   // Belt and braces: a bare command that somehow wasn't handled above still
-  // must not be sent to the answer engine as a question.
+  // must not be sent to the answer engine as a question — but silence is
+  // worse than a nudge, so tell them how to get what they wanted.
   if (parseCommand(text)) {
-    log.warn(`unhandled command "${text.slice(0, 30)}" — suppressing RAG fallthrough`);
+    log.warn(`unhandled command "${text.slice(0, 30)}" — not sending to RAG`);
+    await sendUserMessages(chatGuid, [
+      "I didn't quite catch that — tell me in your own words what you'd like " +
+        "(daily teachings, a program, or a question), or reply HELP for the shortcuts.",
+    ]);
     return;
   }
 

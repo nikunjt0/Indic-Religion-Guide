@@ -48,9 +48,16 @@ export function membershipRequiredMessage(
   if (!link) return null;
   const billing = billingOf(user);
   if (!billing || billing.status === "none") {
+    // Someone who has never subscribed may never have been greeted at all —
+    // this is often their literal first impression, so it must welcome and
+    // explain before it asks for anything.
     return (
-      `Namaste 🙏 Asking me questions and daily teachings are part of ${PRODUCT_NAME} — ` +
-      `${MEMBERSHIP_PRICE_TEXT}. Start your free week here (Apple Pay works): ${link}`
+      `Namaste, and welcome! 🙏 I'm your Hindu Guru. I can text you one short teaching each ` +
+      `day on dharma, scripture, and Hindu traditions at a time you choose — and you can ask ` +
+      `me any question, anytime, about a verse, a ritual, a festival, or anything you've ` +
+      `wondered about.\n\n` +
+      `All of that comes with ${PRODUCT_NAME} — ${MEMBERSHIP_PRICE_TEXT}. Start your free ` +
+      `week here (Apple Pay works): ${link}`
     );
   }
   return (

@@ -36,8 +36,9 @@ describe("welcome message pricing", () => {
     expect(msg).toContain("$5 a month with a 1-week free trial");
     expect(msg).toContain("cancel anytime");
     expect(msg).toContain("https://buy.stripe.com/test?client_reference_id=abc123");
-    // Consent instructions still close the message.
-    expect(msg).toContain("Reply START to begin");
+    // The close invites them to say what they want in their own words —
+    // natural-language requests are consent; START is no longer required.
+    expect(msg).toContain("tell me what you'd like");
   });
 
   it("omits the pricing paragraph when no signup link is configured", () => {
@@ -48,7 +49,12 @@ describe("welcome message pricing", () => {
 describe("onboarding state machine", () => {
   it("welcome message includes consent framing", () => {
     const msg = welcomeMessage(ctx);
-    expect(msg).toContain("Reply START");
+    // It must welcome, say what the product does, invite a natural-language
+    // start, and keep the STOP opt-out.
+    expect(msg).toContain("welcome");
+    expect(msg).toContain("daily teaching");
+    expect(msg).toContain("Answer any question");
+    expect(msg).toContain("tell me what you'd like");
     expect(msg).toContain("STOP");
   });
 

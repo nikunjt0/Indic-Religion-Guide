@@ -111,7 +111,11 @@ export function buildCompanionSystemPrompt(s: CompanionAgentSnapshot): string {
   if (s.optedOut) {
     account.push("Messages: OPTED OUT — they must text START to receive scheduled messages again.");
   } else if (!s.consentGranted) {
-    account.push("Messages: not set up yet — they must text START to begin setup.");
+    account.push(
+      "Messages: not set up yet — but your enrollment tools handle setup in one step: " +
+        "enrolling them in a program or Daily Dharma records their consent and gets them going. " +
+        "When they ask for teachings, just do it — never tell them to text START or any keyword."
+    );
   } else {
     account.push(
       `Messages: on${s.pausedUntilText ? ` (paused until ${s.pausedUntilText})` : ""}`
