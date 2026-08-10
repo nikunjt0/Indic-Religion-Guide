@@ -44,6 +44,8 @@ export interface OnboardingContext {
   productName: string;
   defaultTimezone: string; // IANA guess to confirm
   candidateTimezone?: string; // better guess (web context) when available
+  /** The user's personal Stripe checkout link; adds the pricing paragraph. */
+  signupUrl?: string | null;
 }
 
 const GOALS: Record<string, string> = {
@@ -85,12 +87,17 @@ const PROGRAMS: Record<string, string> = {
 };
 
 export function welcomeMessage(ctx: OnboardingContext): string {
+  const pricing = ctx.signupUrl
+    ? `${ctx.productName} is $5 a month with a 1-week free trial, and you can cancel anytime just ` +
+      `by texting me. Start your free week here (Apple Pay works): ${ctx.signupUrl}\n\n`
+    : "";
   return (
     `Namaste! 🙏 I'm your Hindu Guru — a daily learning companion grounded in scripture. ` +
     `I'm trained on the Bhagavad Gita, the Upanishads, the Ramayana and Mahabharata, the Puranas, ` +
     `devotional poetry, and classical Ayurveda texts, and I cite my sources when I answer.\n\n` +
     `You can text me any question, anytime — about a verse, a ritual, a festival, or something ` +
     `you've wondered about for years. I can also send one short teaching each day at a time you choose.\n\n` +
+    pricing +
     `Reply START to begin. Message frequency depends on your settings. Reply STOP anytime to opt out.`
   );
 }

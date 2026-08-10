@@ -27,6 +27,24 @@ function run(
   return { state: s, patches, lastReplies };
 }
 
+describe("welcome message pricing", () => {
+  it("includes price, free trial, and the personal signup link when configured", () => {
+    const msg = welcomeMessage({
+      ...ctx,
+      signupUrl: "https://buy.stripe.com/test?client_reference_id=abc123",
+    });
+    expect(msg).toContain("$5 a month with a 1-week free trial");
+    expect(msg).toContain("cancel anytime");
+    expect(msg).toContain("https://buy.stripe.com/test?client_reference_id=abc123");
+    // Consent instructions still close the message.
+    expect(msg).toContain("Reply START to begin");
+  });
+
+  it("omits the pricing paragraph when no signup link is configured", () => {
+    expect(welcomeMessage(ctx)).not.toContain("$5");
+  });
+});
+
 describe("onboarding state machine", () => {
   it("welcome message includes consent framing", () => {
     const msg = welcomeMessage(ctx);

@@ -184,6 +184,37 @@ describe("delivery worker", () => {
     expect(await deliverClaimed(deps, claimed!)).toBe("suppressed");
   });
 
+  it("suppresses proactive sends without a membership, but not transactional ones", async () => {
+    const suppressions: string[] = [];
+    const { deps, store, provider } = makeDeps({
+      hasAccess: async () => false,
+      onSuppressed: async (_d, code) => void suppressions.push(code),
+    });
+    const { record } = await enqueueDelivery(deps, enqueueParams());
+    const claimed = await store.tryClaim(record.id, "w", 120_000, T0);
+    expect(await deliverClaimed(deps, claimed!)).toBe("suppressed");
+    expect((await store.get(record.id))!.failureCode).toBe("no-membership");
+    expect(suppressions).toEqual(["no-membership"]);
+
+    // Transactional messages (e.g. the "membership ended" note itself) are
+    // not membership-gated.
+    const txn = await enqueueDelivery(
+      deps,
+      enqueueParams({ deliveryType: "transactional", enrollmentId: undefined, lessonDay: undefined })
+    );
+    const txnClaimed = await store.tryClaim(txn.record.id, "w", 120_000, T0);
+    expect(await deliverClaimed(deps, txnClaimed!)).toBe("sent");
+    expect(provider.sent).toHaveLength(1);
+  });
+
+  it("sends normally when the membership gate grants access", async () => {
+    const { deps, store, provider } = makeDeps({ hasAccess: async () => true });
+    const { record } = await enqueueDelivery(deps, enqueueParams());
+    const claimed = await store.tryClaim(record.id, "w", 120_000, T0);
+    expect(await deliverClaimed(deps, claimed!)).toBe("sent");
+    expect(provider.sent).toHaveLength(1);
+  });
+
   it("suppresses when the delivery type is disabled", async () => {
     const { deps, store } = makeDeps({
       loadPreferences: async () => prefs({ programMessagesEnabled: false }),
