@@ -248,8 +248,8 @@ async function afterLessonSent(d: ScheduledDelivery): Promise<void> {
       variant: `completed-${d.programId}`,
       renderedMessage:
         `You finished ${program.title} — ${advanced.completedLessonDays.length} teachings over ` +
-        `${program.durationDays} days. Reply PROGRAMS to choose what's next, or keep asking ` +
-        `questions anytime.`,
+        `${program.durationDays} days. Want to keep going? Just ask me what else I can teach ` +
+        `you, or keep asking questions anytime.`,
     });
     return;
   }
@@ -1216,7 +1216,8 @@ async function finishOnboarding(
     await scheduleNextDailyDharma(user.handleId);
     await reply(chatGuid, [
       `You're set: one Daily Dharma teaching at ${formatPrefTime(prefs)} each day. ` +
-        `Reply PAUSE, STOP, or CHANGE TIME anytime, and ask me questions whenever you like.`,
+        `You can change the time, pause, or stop whenever you like — just tell me. ` +
+        `And ask me questions anytime.`,
       ...(trialNudge ? [trialNudge] : []),
     ]);
     return;
@@ -1224,7 +1225,9 @@ async function finishOnboarding(
 
   const program = getProgram(opts.selectedProgram);
   if (!program) {
-    await reply(chatGuid, ["I couldn't find that program — reply PROGRAMS to see the list."]);
+    await reply(chatGuid, [
+      "I couldn't find that program — ask me what I can teach you and I'll show you the options.",
+    ]);
     return;
   }
   const enrollment = newEnrollment({
@@ -1247,7 +1250,7 @@ async function finishOnboarding(
     ? "Day 1 is on its way now"
     : `Day 1 arrives tomorrow at ${formatPrefTime(prefs)}`;
   await reply(chatGuid, [
-    `You're enrolled in ${program.title}. ${when}. Reply PAUSE, STOP, or CHANGE TIME anytime — and you can ask me any question between lessons.`,
+    `You're enrolled in ${program.title}. ${when}. You can change the time, pause, or stop whenever you like — just tell me. And ask me any question between lessons.`,
     ...(trialNudge ? [trialNudge] : []),
   ]);
 }
@@ -1346,7 +1349,7 @@ async function handleCommand(
         ? `for ${cmd.days} day${cmd.days === 1 ? "" : "s"}`
         : "until you say RESUME";
       await reply(chatGuid, [
-        `Paused ${untilText}. Your progress is saved and nothing will be sent. Reply RESUME to pick up where you left off.`,
+        `Paused ${untilText}. Your progress is saved and nothing will be sent. Just tell me when you'd like to resume.`,
       ]);
       return;
     }
@@ -1369,7 +1372,9 @@ async function handleCommand(
           `Resumed — Daily Dharma returns at your usual time.${resumeNudge ? `\n\n${resumeNudge}` : ""}`,
         ]);
       } else {
-        await reply(chatGuid, ["Nothing to resume yet. Reply START to begin, or PROGRAMS to browse."]);
+        await reply(chatGuid, [
+          "Nothing to resume yet — tell me what you'd like, daily teachings or one of my programs, and I'll set you up.",
+        ]);
       }
       return;
     }
@@ -1389,7 +1394,9 @@ async function handleCommand(
 
     case "time": {
       if (!prefs) {
-        await reply(chatGuid, ["No delivery schedule yet — reply START to set one up."]);
+        await reply(chatGuid, [
+          "No delivery schedule yet — tell me what you'd like, daily teachings or a program, and I'll set one up.",
+        ]);
         return;
       }
       const enrollments = await getActiveEnrollments(adminDb, userId);
@@ -1456,7 +1463,9 @@ async function handleCommand(
     case "my-program": {
       const enrollments = await getActiveEnrollments(adminDb, userId);
       if (enrollments.length === 0) {
-        await reply(chatGuid, ["You're not in a program right now. Reply PROGRAMS to browse."]);
+        await reply(chatGuid, [
+          "You're not in a program right now — ask me what I can teach you and I'll help you pick one.",
+        ]);
         return;
       }
       const lines = enrollments.map((e) => {
@@ -1507,7 +1516,9 @@ async function handleCommand(
     case "restart": {
       const enrollments = await getActiveEnrollments(adminDb, userId);
       if (enrollments.length === 0) {
-        await reply(chatGuid, ["Nothing to restart. Reply PROGRAMS to pick a program."]);
+        await reply(chatGuid, [
+          "Nothing to restart yet — ask me what I can teach you and I'll get you started.",
+        ]);
         return;
       }
       if (enrollments.length > 1) {
@@ -1522,7 +1533,9 @@ async function handleCommand(
       const enrollment = enrollments[0];
       const program = getProgram(enrollment.programId);
       if (!program) {
-        await reply(chatGuid, ["Nothing to restart. Reply PROGRAMS to pick a program."]);
+        await reply(chatGuid, [
+          "Nothing to restart yet — ask me what I can teach you and I'll get you started.",
+        ]);
         return;
       }
       const fresh: Enrollment = {
@@ -1557,7 +1570,9 @@ async function handleCommand(
         });
         await imessageUsersCol().doc(userId).set({ savedTeachings: saved }, { merge: true });
       }
-      await reply(chatGuid, [`Saved “${lesson.lesson.title}”. Reply SETTINGS to see your saved list.`]);
+      await reply(chatGuid, [
+        `Saved “${lesson.lesson.title}”. Ask me for your saved teachings anytime.`,
+      ]);
       return;
     }
 
@@ -1617,7 +1632,7 @@ async function handleCommand(
     case "now":
     case "tomorrow":
       // Only meaningful during onboarding; outside it, treat as chatter.
-      await reply(chatGuid, ["Reply HELP to see what I can do, or just ask a question."]);
+      await reply(chatGuid, ["Just tell me what you'd like, or ask me anything."]);
       return;
   }
 }
@@ -1811,7 +1826,9 @@ async function changeDeliveryTime(
 ): Promise<void> {
   const result = await applyDeliveryTimeChange(user, time, "all");
   if (result.error) {
-    await reply(chatGuid, ["No delivery schedule yet — reply START to set one up."]);
+    await reply(chatGuid, [
+      "No delivery schedule yet — tell me what you'd like, daily teachings or a program, and I'll set one up.",
+    ]);
     return;
   }
   if (result.status === "changed-but-unverified") {

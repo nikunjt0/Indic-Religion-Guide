@@ -227,8 +227,8 @@ async function processInbound({
   if (parseCommand(text)) {
     log.warn(`unhandled command "${text.slice(0, 30)}" — not sending to RAG`);
     await sendUserMessages(chatGuid, [
-      "I didn't quite catch that — tell me in your own words what you'd like " +
-        "(daily teachings, a program, or a question), or reply HELP for the shortcuts.",
+      "I didn't quite catch that — tell me in your own words what you'd like: " +
+        "daily teachings, a program, or any question.",
     ]);
     return;
   }
