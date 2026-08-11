@@ -25,8 +25,8 @@ export default function SignInPage() {
         </h1>
         <p className="text-sm leading-relaxed text-foreground/75">
           This sign-in is restricted to admins. To use the Guru, text{" "}
-          <strong>GURU</strong> to the bridge number from your iPhone and
-          follow the prompts.
+          <strong>GURU</strong> to <strong>hinduguru@icloud.com</strong> from
+          your iPhone and follow the prompts.
         </p>
         <Suspense fallback={null}>
           <SignInForm mode="signin" />

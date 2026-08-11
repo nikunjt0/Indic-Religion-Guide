@@ -157,15 +157,18 @@ async function processInbound({
         chatGuid,
         onboardingState: "complete",
         traditions: ["hindu"],
-        // Operator comp flag: flip to true in Firestore to grant full access
-        // (guru questions + scheduled teachings) without a paid membership.
-        freeTestingUser: false,
+        // Free-access default while we grow the tester pool: everyone gets
+        // full access (guru questions + scheduled teachings) without paying.
+        // Flip to false in Firestore to put someone back behind the paywall.
+        freeTestingUser: true,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       },
       { merge: true },
     );
-    await beginOnboardingV2({ handleId, handle, chatGuid }, chatGuid, text);
+    // Carry the comp flag so the welcome path skips pricing and the signup
+    // link (beginOnboardingV2 only sees what we hand it, not the doc).
+    await beginOnboardingV2({ handleId, handle, chatGuid, freeTestingUser: true }, chatGuid, text);
     return;
   }
 

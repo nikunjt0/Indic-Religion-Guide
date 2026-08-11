@@ -8,6 +8,7 @@ import {
   groupChunksBySource,
 } from "../../lib/rag/prompt.ts";
 import { withRiskAddendum } from "../../lib/answers/risk.ts";
+import { condenseFollowUpQuestion } from "../../lib/rag/condense.ts";
 import {
   embedQuery,
   findNearestChunks,
@@ -79,16 +80,40 @@ export async function askGuru(args: {
     transcriptText ||
     (hasImages ? "Identify what is shown and the relevant Hindu practice." : "");
 
+  // Follow-ups need two things the first turn doesn't. (1) A standalone
+  // retrieval question: embedding the follow-up concatenated with the prior
+  // turn re-retrieves the chunks that answered the PRIOR question, so the user
+  // gets the same quote twice and their new ask ("what will happen if…?") goes
+  // unanswered. The condenser resolves references and foregrounds the new
+  // intent; on failure we fall back to the old concatenation. (2) Demotion of
+  // chunks already quoted in this conversation, so fresh material outranks a
+  // repeat unless the repeat is decisively the best match.
+  const condensed =
+    history.length > 0
+      ? await condenseFollowUpQuestion(effectiveQuestion, history)
+      : null;
   const lastUserTurn = [...history].reverse().find((m) => m.role === "user");
-  const retrievalQuery = lastUserTurn
-    ? `${lastUserTurn.content}\n\n${effectiveQuestion}`
-    : effectiveQuestion;
+  const retrievalQuery =
+    condensed ??
+    (lastUserTurn
+      ? `${lastUserTurn.content}\n\n${effectiveQuestion}`
+      : effectiveQuestion);
+
+  const priorQuoteIds = new Set<string>();
+  for (const m of history) {
+    if (m.role !== "assistant") continue;
+    for (const g of m.sources ?? []) for (const q of g.quotes) priorQuoteIds.add(q.id);
+    for (const c of m.citations ?? []) priorQuoteIds.add(c.id);
+  }
 
   const [queryVec, guides] = await Promise.all([
     embedQuery(retrievalQuery),
-    matchGuides(effectiveQuestion, profile),
+    matchGuides(condensed ?? effectiveQuestion, profile),
   ]);
-  const chunks = await findNearestChunks(queryVec, 8, { question: effectiveQuestion });
+  const chunks = await findNearestChunks(queryVec, 8, {
+    question: condensed ?? effectiveQuestion,
+    demoteChunkIds: priorQuoteIds,
+  });
   const grouped = groupChunksBySource(chunks);
 
   // SourceGroup is the persisted/rendered shape: same grouping as `grouped`
