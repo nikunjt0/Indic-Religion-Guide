@@ -59,9 +59,9 @@ export function hasMessagingAccess(billing: BillingState | null | undefined, now
 export interface MembershipUserDoc {
   billing?: unknown;
   /**
-   * Operator-set comp flag (flip it in the Firestore console). true = full
-   * access — guru questions and scheduled teachings — without paying.
-   * Defaults to false on creation; absent counts as false.
+   * Comp flag (flippable in the Firestore console). true = full access —
+   * guru questions and scheduled teachings — without paying. New users are
+   * created with true while we grow the tester pool; absent counts as false.
    */
   freeTestingUser?: unknown;
 }
