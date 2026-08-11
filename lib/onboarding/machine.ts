@@ -134,7 +134,7 @@ function promptFor(state: OnboardingState, ctx: OnboardingContext, tz?: string):
     case "awaiting-delivery-time":
       return "What time should your daily teaching arrive? You can say “7:30 AM” or “after dinner.”";
     case "awaiting-timezone-confirmation":
-      return `I have your timezone as ${tz ?? ctx.candidateTimezone ?? ctx.defaultTimezone}. Is that right? Reply YES, or tell me your city or timezone.`;
+      return `I have your timezone as ${tz ?? ctx.candidateTimezone ?? ctx.defaultTimezone}. Is that right? Just say yes, or tell me your city.`;
     case "awaiting-program-selection":
       return (
         "One last thing — where should we start?\n" +
@@ -430,22 +430,23 @@ export function stepOnboarding(
         nextState: "awaiting-start-choice",
         patch: { selectedProgram: program },
         replies: [
-          "You're all set. Would you like Day 1 now, or tomorrow at your chosen time?\n\nReply NOW or TOMORROW.",
+          "You're all set. Would you like your first teaching now, or starting tomorrow at your chosen time?",
         ],
       };
     }
 
     case "awaiting-start-choice": {
-      if (cmd?.kind === "now" || /^now\b/i.test(raw)) {
-        return { nextState: "completed", patch: { startImmediately: true }, replies: [] };
-      }
-      if (cmd?.kind === "tomorrow" || /^tomorrow\b/i.test(raw)) {
+      // "not now, tomorrow" contains both words — check the deferral first.
+      if (cmd?.kind === "tomorrow" || /\b(tomorrow|later)\b/i.test(raw)) {
         return { nextState: "completed", patch: { startImmediately: false }, replies: [] };
+      }
+      if (cmd?.kind === "now" || /\b(now|today|right away|asap)\b/i.test(raw)) {
+        return { nextState: "completed", patch: { startImmediately: true }, replies: [] };
       }
       return {
         nextState: "awaiting-start-choice",
         patch: {},
-        replies: ["Reply NOW for Day 1 right away, or TOMORROW to start at your chosen time."],
+        replies: ["Would you like your first teaching now, or starting tomorrow?"],
         deflected: looksLikeQuestion(raw),
       };
     }
