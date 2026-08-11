@@ -436,7 +436,7 @@ interface CompanionUserDoc {
   accountStatus?: string;
   /** Synced mirror of the Stripe subscription (lib/billing/membership.ts). */
   billing?: unknown;
-  /** Operator comp flag — full access without paying. Default false. */
+  /** Comp flag — full access without paying. Defaults true while we grow the tester pool. */
   freeTestingUser?: boolean;
   membershipEndNoticeSent?: boolean;
   [key: string]: unknown;
